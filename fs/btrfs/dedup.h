@@ -105,6 +105,19 @@ int btrfs_dedup_enable(struct btrfs_fs_info *fs_info, u16 type, u16 backend,
 int btrfs_dedup_disable(struct btrfs_fs_info *fs_info);
 
 /*
+ * Restore previous dedup setup from disk
+ * Called at mount time
+ */
+int btrfs_dedup_resume(struct btrfs_fs_info *fs_info,
+		       struct btrfs_root *dedup_root);
+
+/*
+ * Free current btrfs_dedup_info
+ * Called at umount(close_ctree) time
+ */
+int btrfs_dedup_cleanup(struct btrfs_fs_info *fs_info);
+
+/*
  * Calculate hash for dedup.
  * Caller must ensure [start, start + dedup_bs) has valid data.
  */
