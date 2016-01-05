@@ -436,6 +436,21 @@ int clean_io_failure(struct inode *inode, u64 start, struct page *page,
 void end_extent_writepage(struct page *page, int err, u64 start, u64 end);
 int repair_eb_io_failure(struct btrfs_root *root, struct extent_buffer *eb,
 			 int mirror_num);
+int submit_extent_page(int rw, struct extent_io_tree *tree,
+		       struct writeback_control *wbc,
+		       struct page *page, sector_t sector,
+		       size_t size, unsigned long offset,
+		       struct block_device *bdev,
+		       struct bio **bio_ret,
+		       unsigned long max_pages,
+		       bio_end_io_t end_io_func,
+		       int mirror_num,
+		       unsigned long prev_bio_flags,
+		       unsigned long bio_flags,
+		       bool force_bio_submit);
+int __must_check submit_one_bio(int rw, struct bio *bio,
+				int mirror_num, unsigned long bio_flags);
+void end_bio_extent_writepage(struct bio *bio);
 
 /*
  * When IO fails, either with EIO or csum verification fails, we
