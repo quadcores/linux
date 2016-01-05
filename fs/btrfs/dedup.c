@@ -249,3 +249,80 @@ int btrfs_dedup_add(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 		return inmem_add(dedup_info, hash);
 	return -EINVAL;
 }
+
+static struct inmem_hash *
+inmem_search_bytenr(struct btrfs_dedup_info *dedup_info, u64 bytenr)
+{
+	struct rb_node **p = &dedup_info->bytenr_root.rb_node;
+	struct rb_node *parent = NULL;
+	struct inmem_hash *entry = NULL;
+
+	while (*p) {
+		parent = *p;
+		entry = rb_entry(parent, struct inmem_hash, bytenr_node);
+
+		if (bytenr < entry->bytenr)
+			p = &(*p)->rb_left;
+		else if (bytenr > entry->bytenr)
+			p = &(*p)->rb_right;
+		else
+			return entry;
+	}
+
+	return NULL;
+}
+
+/* Delete a hash from in-memory dedup tree */
+static int inmem_del(struct btrfs_dedup_info *dedup_info, u64 bytenr)
+{
+	struct inmem_hash *hash;
+
+	mutex_lock(&dedup_info->lock);
+	hash = inmem_search_bytenr(dedup_info, bytenr);
+	if (!hash) {
+		mutex_unlock(&dedup_info->lock);
+		return 0;
+	}
+
+	__inmem_del(dedup_info, hash);
+	mutex_unlock(&dedup_info->lock);
+	return 0;
+}
+
+/* Remove a dedup hash from dedup tree */
+int btrfs_dedup_del(struct btrfs_trans_handle *trans, struct btrfs_root *root,
+		    u64 bytenr)
+{
+	struct btrfs_fs_info *fs_info = root->fs_info;
+	struct btrfs_dedup_info *dedup_info = fs_info->dedup_info;
+
+	if (!dedup_info)
+		return 0;
+
+	if (dedup_info->backend == BTRFS_DEDUP_BACKEND_INMEMORY)
+		return inmem_del(dedup_info, bytenr);
+	return -EINVAL;
+}
+
+static void inmem_destroy(struct btrfs_fs_info *fs_info)
+{
+	struct inmem_hash *entry, *tmp;
+	struct btrfs_dedup_info *dedup_info = fs_info->dedup_info;
+
+	mutex_lock(&dedup_info->lock);
+	list_for_each_entry_safe(entry, tmp, &dedup_info->lru_list, lru_list)
+		__inmem_del(dedup_info, entry);
+	mutex_unlock(&dedup_info->lock);
+}
+
+int btrfs_dedup_disable(struct btrfs_fs_info *fs_info)
+{
+	struct btrfs_dedup_info *dedup_info = fs_info->dedup_info;
+
+	if (!dedup_info)
+		return 0;
+
+	if (dedup_info->backend == BTRFS_DEDUP_BACKEND_INMEMORY)
+		inmem_destroy(fs_info);
+	return 0;
+}
