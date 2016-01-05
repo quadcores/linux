@@ -812,26 +812,31 @@ int btrfs_add_delayed_data_ref(struct btrfs_fs_info *fs_info,
 			       u64 bytenr, u64 num_bytes,
 			       u64 parent, u64 ref_root,
 			       u64 owner, u64 offset, u64 reserved, int action,
-			       struct btrfs_delayed_extent_op *extent_op)
+			       int atomic)
 {
 	struct btrfs_delayed_data_ref *ref;
 	struct btrfs_delayed_ref_head *head_ref;
 	struct btrfs_delayed_ref_root *delayed_refs;
 	struct btrfs_qgroup_extent_record *record = NULL;
+	gfp_t gfp_flags;
 
-	BUG_ON(extent_op && !extent_op->is_data);
-	ref = kmem_cache_alloc(btrfs_delayed_data_ref_cachep, GFP_NOFS);
+	if (atomic)
+		gfp_flags = GFP_ATOMIC;
+	else
+		gfp_flags = GFP_NOFS;
+
+	ref = kmem_cache_alloc(btrfs_delayed_data_ref_cachep, gfp_flags);
 	if (!ref)
 		return -ENOMEM;
 
-	head_ref = kmem_cache_alloc(btrfs_delayed_ref_head_cachep, GFP_NOFS);
+	head_ref = kmem_cache_alloc(btrfs_delayed_ref_head_cachep, gfp_flags);
 	if (!head_ref) {
 		kmem_cache_free(btrfs_delayed_data_ref_cachep, ref);
 		return -ENOMEM;
 	}
 
 	if (fs_info->quota_enabled && is_fstree(ref_root)) {
-		record = kmalloc(sizeof(*record), GFP_NOFS);
+		record = kmalloc(sizeof(*record), gfp_flags);
 		if (!record) {
 			kmem_cache_free(btrfs_delayed_data_ref_cachep, ref);
 			kmem_cache_free(btrfs_delayed_ref_head_cachep,
@@ -840,10 +845,13 @@ int btrfs_add_delayed_data_ref(struct btrfs_fs_info *fs_info,
 		}
 	}
 
-	head_ref->extent_op = extent_op;
+	head_ref->extent_op = NULL;
 
 	delayed_refs = &trans->transaction->delayed_refs;
-	spin_lock(&delayed_refs->lock);
+
+	/* For atomic case, caller should already hold the delayed_refs lock */
+	if (!atomic)
+		spin_lock(&delayed_refs->lock);
 
 	/*
 	 * insert both the head node and the new ref without dropping
@@ -856,7 +864,8 @@ int btrfs_add_delayed_data_ref(struct btrfs_fs_info *fs_info,
 	add_delayed_data_ref(fs_info, trans, head_ref, &ref->node, bytenr,
 				   num_bytes, parent, ref_root, owner, offset,
 				   action);
-	spin_unlock(&delayed_refs->lock);
+	if (!atomic)
+		spin_unlock(&delayed_refs->lock);
 
 	return 0;
 }

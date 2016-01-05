@@ -3539,6 +3539,10 @@ int btrfs_inc_extent_ref(struct btrfs_trans_handle *trans,
 			 struct btrfs_root *root,
 			 u64 bytenr, u64 num_bytes, u64 parent,
 			 u64 root_objectid, u64 owner, u64 offset);
+int btrfs_inc_extent_ref_atomic(struct btrfs_trans_handle *trans,
+				struct btrfs_root *root, u64 bytenr,
+				u64 num_bytes, u64 parent,
+				u64 root_objectid, u64 owner, u64 offset);
 
 int btrfs_start_dirty_block_groups(struct btrfs_trans_handle *trans,
 				   struct btrfs_root *root);
