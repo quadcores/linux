@@ -73,8 +73,18 @@ struct btrfs_dedup_info {
 
 struct btrfs_trans_handle;
 
-int btrfs_dedup_hash_size(u16 type);
-struct btrfs_dedup_hash *btrfs_dedup_alloc_hash(u16 type);
+static inline int btrfs_dedup_hash_size(u16 type)
+{
+	if (WARN_ON(type >= ARRAY_SIZE(btrfs_dedup_sizes)))
+		return -EINVAL;
+	return sizeof(struct btrfs_dedup_hash) + btrfs_dedup_sizes[type];
+}
+
+static inline struct btrfs_dedup_hash *btrfs_dedup_alloc_hash(u16 type)
+{
+	return kzalloc(btrfs_dedup_hash_size(type), GFP_NOFS);
+}
+
 
 /*
  * Initial inband dedup info
