@@ -100,6 +100,9 @@ struct btrfs_ordered_sum;
 /* tracks free space in block groups. */
 #define BTRFS_FREE_SPACE_TREE_OBJECTID 10ULL
 
+/* on-disk dedup tree (EXPERIMENTAL) */
+#define BTRFS_DEDUP_TREE_OBJECTID 11ULL
+
 /* for storing balance parameters in the root tree */
 #define BTRFS_BALANCE_OBJECTID -4ULL
 
@@ -505,6 +508,7 @@ struct btrfs_super_block {
  * ones specified below then we will fail to mount
  */
 #define BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE	(1ULL << 0)
+#define BTRFS_FEATURE_COMPAT_RO_DEDUP		(1ULL << 1)
 
 #define BTRFS_FEATURE_INCOMPAT_MIXED_BACKREF	(1ULL << 0)
 #define BTRFS_FEATURE_INCOMPAT_DEFAULT_SUBVOL	(1ULL << 1)
@@ -534,7 +538,8 @@ struct btrfs_super_block {
 #define BTRFS_FEATURE_COMPAT_SAFE_CLEAR		0ULL
 
 #define BTRFS_FEATURE_COMPAT_RO_SUPP			\
-	(BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE)
+	(BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE |	\
+	 BTRFS_FEATURE_COMPAT_RO_DEDUP)
 
 #define BTRFS_FEATURE_COMPAT_RO_SAFE_SET	0ULL
 #define BTRFS_FEATURE_COMPAT_RO_SAFE_CLEAR	0ULL
@@ -963,6 +968,46 @@ struct btrfs_file_extent_item {
 struct btrfs_csum_item {
 	u8 csum;
 } __attribute__ ((__packed__));
+
+/*
+ * Objectid: 0
+ * Type: BTRFS_DEDUP_STATUS_ITEM_KEY
+ * Offset: 0
+ */
+struct btrfs_dedup_status_item {
+	__le64 blocksize;
+	__le64 limit_nr;
+	__le16 hash_type;
+	__le16 backend;
+} __attribute__ ((__packed__));
+
+/*
+ * Objectid: Last 64 bit of the hash
+ * Type: BTRFS_DEDUP_HASH_ITEM_KEY
+ * Offset: Bytenr of the hash
+ *
+ * Used for hash <-> bytenr search
+ * XXX: On-disk format not stable yet, see the unsed one
+ */
+struct btrfs_dedup_hash_item {
+	/* on disk length of dedup range */
+	__le64 len;
+
+	/* Spare space */
+	u8 __unused[16];
+
+	/* Hash follows */
+} __attribute__ ((__packed__));
+
+/*
+ * Objectid: bytenr
+ * Type: BTRFS_DEDUP_BYTENR_ITEM_KEY
+ * offset: Last 64 bit of the hash
+ *
+ * Used for bytenr <-> hash search (for free_extent)
+ * all its content is hash.
+ * So no special item struct is needed.
+ */
 
 struct btrfs_dev_stats_item {
 	/*
@@ -2165,6 +2210,13 @@ struct btrfs_ioctl_defrag_range_args {
 #define BTRFS_CHUNK_ITEM_KEY	228
 
 /*
+ * Dedup item and status
+ */
+#define BTRFS_DEDUP_STATUS_ITEM_KEY	230
+#define BTRFS_DEDUP_HASH_ITEM_KEY	231
+#define BTRFS_DEDUP_BYTENR_ITEM_KEY	232
+
+/*
  * Records the overall state of the qgroups.
  * There's only one instance of this key present,
  * (0, BTRFS_QGROUP_STATUS_KEY, 0)
@@ -3226,6 +3278,19 @@ static inline unsigned long btrfs_leaf_data(struct extent_buffer *l)
 {
 	return offsetof(struct btrfs_leaf, items);
 }
+
+/* btrfs_dedup_status */
+BTRFS_SETGET_FUNCS(dedup_status_blocksize, struct btrfs_dedup_status_item,
+		   blocksize, 64);
+BTRFS_SETGET_FUNCS(dedup_status_limit, struct btrfs_dedup_status_item,
+		   limit_nr, 64);
+BTRFS_SETGET_FUNCS(dedup_status_hash_type, struct btrfs_dedup_status_item,
+		   hash_type, 16);
+BTRFS_SETGET_FUNCS(dedup_status_backend, struct btrfs_dedup_status_item,
+		   backend, 16);
+
+/* btrfs_dedup_hash_item */
+BTRFS_SETGET_FUNCS(dedup_hash_len, struct btrfs_dedup_hash_item, len, 64);
 
 /* struct btrfs_file_extent_item */
 BTRFS_SETGET_FUNCS(file_extent_type, struct btrfs_file_extent_item, type, 8);
