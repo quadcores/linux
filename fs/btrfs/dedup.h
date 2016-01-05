@@ -137,6 +137,9 @@ int btrfs_dedup_calc_hash(struct btrfs_root *root, struct inode *inode,
  * *INCREASED*, and hash->bytenr/num_bytes will record the existing
  * extent data.
  * Return 0 for a hash miss. Nothing is done
+ * Return <0 for error.
+ *
+ * Only on-disk backedn may return error though.
  */
 int btrfs_dedup_search(struct inode *inode, u64 file_pos,
 		       struct btrfs_dedup_hash *hash);
