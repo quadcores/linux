@@ -437,6 +437,102 @@ static int inmem_del(struct btrfs_dedup_info *dedup_info, u64 bytenr)
 	return 0;
 }
 
+/*
+ * If prepare_del is given, this will setup search_slot() for delete.
+ * Caller needs to do proper locking.
+ *
+ * Return > 0 for found.
+ * Return 0 for not found.
+ * Return < 0 for error.
+ */
+static int ondisk_search_bytenr(struct btrfs_trans_handle *trans,
+				struct btrfs_dedup_info *dedup_info,
+				struct btrfs_path *path, u64 bytenr,
+				int prepare_del)
+{
+	struct btrfs_key key;
+	struct btrfs_root *dedup_root = dedup_info->dedup_root;
+	int ret;
+	int ins_len = 0;
+	int cow = 0;
+
+	if (prepare_del) {
+		if (WARN_ON(trans == NULL))
+			return -EINVAL;
+		cow = 1;
+		ins_len = -1;
+	}
+
+	key.objectid = bytenr;
+	key.type = BTRFS_DEDUP_BYTENR_ITEM_KEY;
+	key.offset = (u64)-1;
+
+	ret = btrfs_search_slot(trans, dedup_root, &key, path,
+				ins_len, cow);
+
+	/*
+	 * Although it's low in possibility, it's still possible that
+	 * the last 64bits are all 1.
+	 */
+	if (ret <= 0)
+		return ret;
+
+	ret = btrfs_previous_item(dedup_root, path, bytenr,
+				  BTRFS_DEDUP_BYTENR_ITEM_KEY);
+	if (ret < 0)
+		return ret;
+	if (ret > 0)
+		return 0;
+	return 1;
+}
+
+static int ondisk_del(struct btrfs_trans_handle *trans,
+		      struct btrfs_dedup_info *dedup_info, u64 bytenr)
+{
+	struct btrfs_root *dedup_root = dedup_info->dedup_root;
+	struct btrfs_path *path;
+	struct btrfs_key key;
+	int ret;
+
+	path = btrfs_alloc_path();
+	if (!path)
+		return -ENOMEM;
+
+	key.objectid = bytenr;
+	key.type = BTRFS_DEDUP_BYTENR_ITEM_KEY;
+	key.offset = 0;
+
+	mutex_lock(&dedup_info->lock);
+
+	ret = ondisk_search_bytenr(trans, dedup_info, path, bytenr, 1);
+	if (ret <= 0)
+		goto out;
+
+	btrfs_item_key_to_cpu(path->nodes[0], &key, path->slots[0]);
+	ret = btrfs_del_item(trans, dedup_root, path);
+	btrfs_release_path(path);
+	if (ret < 0)
+		goto out;
+	/* Search for hash item and delete it */
+	key.objectid = key.offset;
+	key.type = BTRFS_DEDUP_HASH_ITEM_KEY;
+	key.offset = bytenr;
+
+	ret = btrfs_search_slot(trans, dedup_root, &key, path, -1, 1);
+	if (WARN_ON(ret > 0)) {
+		ret = -ENOENT;
+		goto out;
+	}
+	if (ret < 0)
+		goto out;
+	ret = btrfs_del_item(trans, dedup_root, path);
+
+out:
+	btrfs_free_path(path);
+	mutex_unlock(&dedup_info->lock);
+	return ret;
+}
+
 /* Remove a dedup hash from dedup tree */
 int btrfs_dedup_del(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 		    u64 bytenr)
@@ -449,6 +545,8 @@ int btrfs_dedup_del(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 
 	if (dedup_info->backend == BTRFS_DEDUP_BACKEND_INMEMORY)
 		return inmem_del(dedup_info, bytenr);
+	if (dedup_info->backend == BTRFS_DEDUP_BACKEND_ONDISK)
+		return ondisk_del(trans, dedup_info, bytenr);
 	return -EINVAL;
 }
 
