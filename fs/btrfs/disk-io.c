@@ -2576,6 +2576,7 @@ int open_ctree(struct super_block *sb,
 	mutex_init(&fs_info->delete_unused_bgs_mutex);
 	mutex_init(&fs_info->reloc_mutex);
 	mutex_init(&fs_info->delalloc_root_mutex);
+	mutex_init(&fs_info->dedup_ioctl_mutex);
 	seqlock_init(&fs_info->profiles_lock);
 	init_rwsem(&fs_info->delayed_iput_sem);
 

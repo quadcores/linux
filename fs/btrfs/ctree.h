@@ -1908,6 +1908,7 @@ struct btrfs_fs_info {
 
 	/* reference to inband de-duplication info */
 	struct btrfs_dedup_info *dedup_info;
+	struct mutex dedup_ioctl_mutex;
 };
 
 struct btrfs_subvolume_writers {

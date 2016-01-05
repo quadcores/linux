@@ -77,7 +77,7 @@ static inline struct inmem_hash *inmem_alloc_hash(u16 type)
 }
 
 int btrfs_dedup_enable(struct btrfs_fs_info *fs_info, u16 type, u16 backend,
-		       u64 blocksize, u64 limit)
+		       u64 blocksize, u64 limit_nr, u64 limit_mem)
 {
 	struct btrfs_dedup_info *dedup_info;
 	struct btrfs_root *dedup_root;
@@ -87,6 +87,7 @@ int btrfs_dedup_enable(struct btrfs_fs_info *fs_info, u16 type, u16 backend,
 	struct btrfs_dedup_status_item *status;
 	int create_tree;
 	u64 compat_ro_flag = btrfs_super_compat_ro_flags(fs_info->super_copy);
+	u64 limit = limit_nr;
 	int ret = 0;
 
 	/* Sanity check */
@@ -115,6 +116,8 @@ int btrfs_dedup_enable(struct btrfs_fs_info *fs_info, u16 type, u16 backend,
 	/* Meaningless and unable to enable dedup for RO fs */
 	if (fs_info->sb->s_flags & MS_RDONLY)
 		return -EINVAL;
+
+	limit = min(limit, limit_mem / sizeof(struct inmem_hash));
 
 	if (fs_info->dedup_info) {
 		dedup_info = fs_info->dedup_info;
@@ -198,6 +201,32 @@ out:
 		fs_info->dedup_info = NULL;
 	}
 	return ret;
+}
+
+void btrfs_dedup_status(struct btrfs_fs_info *fs_info,
+			struct btrfs_ioctl_dedup_args *dargs)
+{
+	struct btrfs_dedup_info *dedup_info = fs_info->dedup_info;
+
+	if (!dedup_info) {
+		dargs->status = 0;
+		dargs->blocksize = 0;
+		dargs->backend = 0;
+		dargs->hash_type = 0;
+		dargs->limit_nr = 0;
+		dargs->current_nr = 0;
+		return;
+	}
+	mutex_lock(&dedup_info->lock);
+	dargs->status = 1;
+	dargs->blocksize = dedup_info->blocksize;
+	dargs->backend = dedup_info->backend;
+	dargs->hash_type = dedup_info->hash_type;
+	dargs->limit_nr = dedup_info->limit_nr;
+	dargs->limit_mem = dedup_info->limit_nr * sizeof(struct inmem_hash);
+	dargs->current_nr = dedup_info->current_nr;
+	mutex_unlock(&dedup_info->lock);
+	return;
 }
 
 int btrfs_dedup_resume(struct btrfs_fs_info *fs_info,
