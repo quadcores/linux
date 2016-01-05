@@ -465,3 +465,64 @@ int btrfs_dedup_search(struct inode *inode, u64 file_pos,
 	}
 	return ret;
 }
+
+static int hash_data(struct btrfs_dedup_info *dedup_info, const char *data,
+		     u64 length, struct btrfs_dedup_hash *hash)
+{
+	struct crypto_shash *tfm = dedup_info->dedup_driver;
+	struct {
+		struct shash_desc desc;
+		char ctx[crypto_shash_descsize(tfm)];
+	} sdesc;
+	int ret;
+
+	sdesc.desc.tfm = tfm;
+	sdesc.desc.flags = 0;
+
+	ret = crypto_shash_digest(&sdesc.desc, data, length,
+				  (char *)(hash->hash));
+	return ret;
+}
+
+int btrfs_dedup_calc_hash(struct btrfs_root *root, struct inode *inode,
+			  u64 start, struct btrfs_dedup_hash *hash)
+{
+	struct page *p;
+	struct btrfs_dedup_info *dedup_info = root->fs_info->dedup_info;
+	char *data;
+	int i;
+	int ret;
+	u64 dedup_bs;
+	u64 sectorsize = root->sectorsize;
+
+	if (!dedup_info || !hash)
+		return 0;
+
+	WARN_ON(!IS_ALIGNED(start, sectorsize));
+
+	dedup_bs = dedup_info->blocksize;
+	sectorsize = root->sectorsize;
+
+	data = kmalloc(dedup_bs, GFP_NOFS);
+	if (!data)
+		return -ENOMEM;
+	for (i = 0; sectorsize * i < dedup_bs; i++) {
+		char *d;
+
+		/* TODO: Add support for subpage size case */
+		p = find_get_page(inode->i_mapping,
+				  (start >> PAGE_CACHE_SHIFT) + i);
+		if (WARN_ON(!p)) {
+			ret = -ENOENT;
+			goto out;
+		}
+		d = kmap_atomic(p);
+		memcpy((data + sectorsize * i), d, sectorsize);
+		kunmap_atomic(d);
+		page_cache_release(p);
+	}
+	ret = hash_data(dedup_info, data, dedup_bs, hash);
+out:
+	kfree(data);
+	return ret;
+}
