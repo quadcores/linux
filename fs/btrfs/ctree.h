@@ -1860,6 +1860,9 @@ struct btrfs_fs_info {
 	struct list_head pinned_chunks;
 
 	int creating_free_space_tree;
+
+	/* reference to inband de-duplication info */
+	struct btrfs_dedup_info *dedup_info;
 };
 
 struct btrfs_subvolume_writers {
