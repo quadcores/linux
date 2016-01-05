@@ -326,3 +326,142 @@ int btrfs_dedup_disable(struct btrfs_fs_info *fs_info)
 		inmem_destroy(fs_info);
 	return 0;
 }
+
+/*
+ * Caller must ensure the corresponding ref head is not being run.
+ */
+static struct inmem_hash *
+inmem_search_hash(struct btrfs_dedup_info *dedup_info, u8 *hash)
+{
+	struct rb_node **p = &dedup_info->hash_root.rb_node;
+	struct rb_node *parent = NULL;
+	struct inmem_hash *entry = NULL;
+	u16 hash_type = dedup_info->hash_type;
+	int hash_len = btrfs_dedup_sizes[hash_type];
+
+	while (*p) {
+		parent = *p;
+		entry = rb_entry(parent, struct inmem_hash, hash_node);
+
+		if (memcmp(hash, entry->hash, hash_len) < 0) {
+			p = &(*p)->rb_left;
+		} else if (memcmp(hash, entry->hash, hash_len) > 0) {
+			p = &(*p)->rb_right;
+		} else {
+			/* Found, need to re-add it to LRU list head */
+			list_del(&entry->lru_list);
+			list_add(&entry->lru_list, &dedup_info->lru_list);
+			return entry;
+		}
+	}
+	return NULL;
+}
+
+static int inmem_search(struct inode *inode, u64 file_pos,
+			struct btrfs_dedup_hash *hash)
+{
+	int ret;
+	struct btrfs_root *root = BTRFS_I(inode)->root;
+	struct btrfs_fs_info *fs_info = root->fs_info;
+	struct btrfs_trans_handle *trans;
+	struct btrfs_delayed_ref_root *delayed_refs;
+	struct btrfs_delayed_ref_head *head;
+	struct inmem_hash *found_hash;
+	struct btrfs_dedup_info *dedup_info = fs_info->dedup_info;
+	u64 bytenr;
+	u32 num_bytes;
+
+	trans = btrfs_join_transaction(root);
+	if (IS_ERR(trans))
+		return PTR_ERR(trans);
+
+again:
+	mutex_lock(&dedup_info->lock);
+	found_hash = inmem_search_hash(dedup_info, hash->hash);
+	/* If we don't find a duplicated extent, just return. */
+	if (!found_hash) {
+		ret = 0;
+		goto out;
+	}
+	bytenr = found_hash->bytenr;
+	num_bytes = found_hash->num_bytes;
+
+	delayed_refs = &trans->transaction->delayed_refs;
+
+	spin_lock(&delayed_refs->lock);
+	head = btrfs_find_delayed_ref_head(trans, bytenr);
+	if (!head) {
+		/*
+		 * We can safely insert a new delayed_ref as long as we
+		 * hold delayed_refs->lock.
+		 * Only need to use atomic inc_extent_ref()
+		 */
+		ret = btrfs_inc_extent_ref_atomic(trans, root, bytenr,
+				num_bytes, 0, root->root_key.objectid,
+				btrfs_ino(inode), file_pos);
+		spin_unlock(&delayed_refs->lock);
+
+		if (ret == 0) {
+			hash->bytenr = bytenr;
+			hash->num_bytes = num_bytes;
+			ret = 1;
+		}
+		goto out;
+	}
+
+	/*
+	 * We can't lock ref head with dedup_info->lock hold or we will cause
+	 * ABBA dead lock.
+	 */
+	mutex_unlock(&dedup_info->lock);
+	ret = btrfs_delayed_ref_lock(trans, head);
+	spin_unlock(&delayed_refs->lock);
+	if (ret == -EAGAIN)
+		goto again;
+
+	mutex_lock(&dedup_info->lock);
+	/* Search again to ensure the hash is still here */
+	found_hash = inmem_search_hash(dedup_info, hash->hash);
+	if (!found_hash) {
+		ret = 0;
+		mutex_unlock(&head->mutex);
+		goto out;
+	}
+	hash->bytenr = bytenr;
+	hash->num_bytes = num_bytes;
+
+	/*
+	 * Increase the extent ref right now, to avoid delayed ref run
+	 * Or we may increase ref on non-exist extent.
+	 */
+	btrfs_inc_extent_ref(trans, root, bytenr, num_bytes, 0,
+			     root->root_key.objectid,
+			     btrfs_ino(inode), file_pos);
+	mutex_unlock(&head->mutex);
+out:
+	mutex_unlock(&dedup_info->lock);
+	btrfs_end_transaction(trans, root);
+
+	return ret;
+}
+
+int btrfs_dedup_search(struct inode *inode, u64 file_pos,
+		       struct btrfs_dedup_hash *hash)
+{
+	struct btrfs_fs_info *fs_info = BTRFS_I(inode)->root->fs_info;
+	struct btrfs_dedup_info *dedup_info = fs_info->dedup_info;
+	int ret = 0;
+
+	if (WARN_ON(!dedup_info || !hash))
+		return 0;
+
+	if (dedup_info->backend == BTRFS_DEDUP_BACKEND_INMEMORY)
+		ret = inmem_search(inode, file_pos, hash);
+
+	/* It's possible hash->bytenr/num_bytenr already changed */
+	if (ret == 0) {
+		hash->num_bytes = 0;
+		hash->bytenr = 0;
+	}
+	return ret;
+}
