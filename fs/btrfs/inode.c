@@ -672,6 +672,21 @@ static void free_async_extent_pages(struct async_extent *async_extent)
 	async_extent->pages = NULL;
 }
 
+static inline int inode_need_dedup(struct inode *inode)
+{
+	struct btrfs_root *root = BTRFS_I(inode)->root;
+	struct btrfs_dedup_info *dedup_info = root->fs_info->dedup_info;
+
+	if (!dedup_info)
+		return 0;
+
+	if (BTRFS_I(inode)->flags & BTRFS_INODE_NODEDUP)
+		return 0;
+
+	return 1;
+}
+
+
 static int submit_dedup_extent(struct inode *inode, u64 start,
 			       unsigned long len, u64 disk_start, int dedup)
 {
@@ -1794,8 +1809,6 @@ static int run_delalloc_range(struct inode *inode, struct page *locked_page,
 {
 	int ret;
 	int force_cow = need_force_cow(inode, start, end);
-	struct btrfs_root *root = BTRFS_I(inode)->root;
-	struct btrfs_dedup_info *dedup_info = root->fs_info->dedup_info;
 
 	if (BTRFS_I(inode)->flags & BTRFS_INODE_NODATACOW && !force_cow) {
 		ret = run_delalloc_nocow(inode, locked_page, start, end,
@@ -1803,7 +1816,7 @@ static int run_delalloc_range(struct inode *inode, struct page *locked_page,
 	} else if (BTRFS_I(inode)->flags & BTRFS_INODE_PREALLOC && !force_cow) {
 		ret = run_delalloc_nocow(inode, locked_page, start, end,
 					 page_started, 0, nr_written);
-	} else if (!inode_need_compress(inode) && !dedup_info) {
+	} else if (!inode_need_compress(inode) && !inode_need_dedup(inode)) {
 		ret = cow_file_range(inode, locked_page, start, end,
 				      page_started, nr_written, 1);
 	} else {
