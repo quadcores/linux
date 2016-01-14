@@ -41,12 +41,23 @@ static int prop_compression_apply(struct inode *inode,
 				  size_t len);
 static const char *prop_compression_extract(struct inode *inode);
 
+static int prop_dedup_validate(const char *value, size_t len);
+static int prop_dedup_apply(struct inode *inode, const char *value, size_t len);
+static const char *prop_dedup_extract(struct inode *inode);
+
 static struct prop_handler prop_handlers[] = {
 	{
 		.xattr_name = XATTR_BTRFS_PREFIX "compression",
 		.validate = prop_compression_validate,
 		.apply = prop_compression_apply,
 		.extract = prop_compression_extract,
+		.inheritable = 1
+	},
+	{
+		.xattr_name = XATTR_BTRFS_PREFIX "dedup",
+		.validate = prop_dedup_validate,
+		.apply = prop_dedup_apply,
+		.extract = prop_dedup_extract,
 		.inheritable = 1
 	},
 };
@@ -425,4 +436,33 @@ static const char *prop_compression_extract(struct inode *inode)
 	return NULL;
 }
 
+static int prop_dedup_validate(const char *value, size_t len)
+{
+	if (!strncmp("disable", value, len))
+		return 0;
 
+	return -EINVAL;
+}
+
+static int prop_dedup_apply(struct inode *inode, const char *value, size_t len)
+{
+	if (len == 0) {
+		BTRFS_I(inode)->flags &= ~BTRFS_INODE_NODEDUP;
+		return 0;
+	}
+
+	if (!strncmp("disable", value, len)) {
+		BTRFS_I(inode)->flags |= BTRFS_INODE_NODEDUP;
+		return 0;
+	}
+
+	return -EINVAL;
+}
+
+static const char *prop_dedup_extract(struct inode *inode)
+{
+	if (BTRFS_I(inode)->flags & BTRFS_INODE_NODEDUP)
+		return "disable";
+
+	return NULL;
+}
