@@ -756,6 +756,7 @@ static noinline int
 run_delalloc_dedup(struct inode *inode, struct page *locked_page, u64 start,
 		   u64 end, struct async_cow *async_cow)
 {
+	// This is an important function 
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	struct extent_map_tree *em_tree = &BTRFS_I(inode)->extent_tree;
 	struct extent_io_tree *tree = &BTRFS_I(inode)->io_tree;
