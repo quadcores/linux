@@ -96,15 +96,7 @@ static inline struct btrfs_dedup_hash *btrfs_dedup_alloc_hash(u16 type)
  * Called at dedup enable time.
  */
 int btrfs_dedup_enable(struct btrfs_fs_info *fs_info, u16 type, u16 backend,
-		       u64 blocksize, u64 limit_nr, u64 limit_mem);
-
-/*
- * Get inband dedup info
- * Since it needs to access different backends' hash size, which
- * is not exported, we need such simple function.
- */
-void btrfs_dedup_status(struct btrfs_fs_info *fs_info,
-			struct btrfs_ioctl_dedup_args *dargs);
+		       u64 blocksize, u64 limit);
 
 /*
  * Disable dedup and invalidate all its dedup data.
@@ -131,6 +123,12 @@ int btrfs_dedup_cleanup(struct btrfs_fs_info *fs_info);
  */
 int btrfs_dedup_calc_hash(struct btrfs_root *root, struct inode *inode,
 			  u64 start, struct btrfs_dedup_hash *hash);
+
+/*
+ * Calculate hash for cbs (hash of the complete file). 
+ */
+int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
+			  u64 start, u64 end, struct btrfs_dedup_hash *hash);
 
 /*
  * Search for duplicated extents by calculated hash

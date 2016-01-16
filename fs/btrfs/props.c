@@ -461,7 +461,7 @@ static int prop_dedup_apply(struct inode *inode, const char *value, size_t len)
 
 static const char *prop_dedup_extract(struct inode *inode)
 {
-	if (BTRFS_I(inode)->flags & BTRFS_INODE_NODEDUP)
+	if (BTRFS_I(inode)->flags | BTRFS_INODE_NODEDUP)
 		return "disable";
 
 	return NULL;

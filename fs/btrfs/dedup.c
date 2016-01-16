@@ -77,8 +77,9 @@ static inline struct inmem_hash *inmem_alloc_hash(u16 type)
 }
 
 int btrfs_dedup_enable(struct btrfs_fs_info *fs_info, u16 type, u16 backend,
-		       u64 blocksize, u64 limit_nr, u64 limit_mem)
+		       u64 blocksize, u64 limit)
 {
+	printk(KERN_ERR " ##### In btrfs_dedup_enable ##### \n");
 	struct btrfs_dedup_info *dedup_info;
 	struct btrfs_root *dedup_root;
 	struct btrfs_key key;
@@ -87,7 +88,6 @@ int btrfs_dedup_enable(struct btrfs_fs_info *fs_info, u16 type, u16 backend,
 	struct btrfs_dedup_status_item *status;
 	int create_tree;
 	u64 compat_ro_flag = btrfs_super_compat_ro_flags(fs_info->super_copy);
-	u64 limit = limit_nr;
 	int ret = 0;
 
 	/* Sanity check */
@@ -116,8 +116,6 @@ int btrfs_dedup_enable(struct btrfs_fs_info *fs_info, u16 type, u16 backend,
 	/* Meaningless and unable to enable dedup for RO fs */
 	if (fs_info->sb->s_flags & MS_RDONLY)
 		return -EINVAL;
-
-	limit = min(limit, limit_mem / sizeof(struct inmem_hash));
 
 	if (fs_info->dedup_info) {
 		dedup_info = fs_info->dedup_info;
@@ -203,32 +201,6 @@ out:
 	return ret;
 }
 
-void btrfs_dedup_status(struct btrfs_fs_info *fs_info,
-			struct btrfs_ioctl_dedup_args *dargs)
-{
-	struct btrfs_dedup_info *dedup_info = fs_info->dedup_info;
-
-	if (!dedup_info) {
-		dargs->status = 0;
-		dargs->blocksize = 0;
-		dargs->backend = 0;
-		dargs->hash_type = 0;
-		dargs->limit_nr = 0;
-		dargs->current_nr = 0;
-		return;
-	}
-	mutex_lock(&dedup_info->lock);
-	dargs->status = 1;
-	dargs->blocksize = dedup_info->blocksize;
-	dargs->backend = dedup_info->backend;
-	dargs->hash_type = dedup_info->hash_type;
-	dargs->limit_nr = dedup_info->limit_nr;
-	dargs->limit_mem = dedup_info->limit_nr * sizeof(struct inmem_hash);
-	dargs->current_nr = dedup_info->current_nr;
-	mutex_unlock(&dedup_info->lock);
-	return;
-}
-
 int btrfs_dedup_resume(struct btrfs_fs_info *fs_info,
 		       struct btrfs_root *dedup_root)
 {
@@ -296,6 +268,8 @@ int btrfs_dedup_cleanup(struct btrfs_fs_info *fs_info)
 static int inmem_insert_hash(struct rb_root *root,
 			     struct inmem_hash *hash, int hash_len)
 {
+	printk(KERN_ERR " ##### In %s ##### \n", __func__);
+
 	struct rb_node **p = &root->rb_node;
 	struct rb_node *parent = NULL;
 	struct inmem_hash *entry = NULL;
@@ -360,6 +334,8 @@ static void __inmem_del(struct btrfs_dedup_info *dedup_info,
 static int inmem_add(struct btrfs_dedup_info *dedup_info,
 		     struct btrfs_dedup_hash *hash)
 {
+	printk(KERN_ERR " ##### In %s ##### \n", __func__);
+
 	int ret = 0;
 	u16 type = dedup_info->hash_type;
 	struct inmem_hash *ihash;
@@ -420,6 +396,8 @@ static int ondisk_add(struct btrfs_trans_handle *trans,
 		      struct btrfs_dedup_info *dedup_info,
 		      struct btrfs_dedup_hash *hash)
 {
+	printk(KERN_ERR " ##### In %s ##### \n", __func__);
+
 	struct btrfs_path *path;
 	struct btrfs_root *dedup_root = dedup_info->dedup_root;
 	struct btrfs_key key;
@@ -494,6 +472,8 @@ out:
 int btrfs_dedup_add(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 		    struct btrfs_dedup_hash *hash)
 {
+	printk(KERN_INFO " ##### In %s ##### \n", __func__);
+
 	struct btrfs_fs_info *fs_info = root->fs_info;
 	struct btrfs_dedup_info *dedup_info = fs_info->dedup_info;
 
@@ -581,14 +561,10 @@ static int ondisk_search_bytenr(struct btrfs_trans_handle *trans,
 
 	ret = btrfs_search_slot(trans, dedup_root, &key, path,
 				ins_len, cow);
-
-	/*
-	 * Although it's low in possibility, it's still possible that
-	 * the last 64bits are all 1.
-	 */
-	if (ret <= 0)
+	if (ret < 0)
 		return ret;
 
+	WARN_ON(ret == 0);
 	ret = btrfs_previous_item(dedup_root, path, bytenr,
 				  BTRFS_DEDUP_BYTENR_ITEM_KEY);
 	if (ret < 0)
@@ -621,10 +597,9 @@ static int ondisk_del(struct btrfs_trans_handle *trans,
 		goto out;
 
 	btrfs_item_key_to_cpu(path->nodes[0], &key, path->slots[0]);
-	ret = btrfs_del_item(trans, dedup_root, path);
+	btrfs_del_item(trans, dedup_root, path);
 	btrfs_release_path(path);
-	if (ret < 0)
-		goto out;
+
 	/* Search for hash item and delete it */
 	key.objectid = key.offset;
 	key.type = BTRFS_DEDUP_HASH_ITEM_KEY;
@@ -637,7 +612,7 @@ static int ondisk_del(struct btrfs_trans_handle *trans,
 	}
 	if (ret < 0)
 		goto out;
-	ret = btrfs_del_item(trans, dedup_root, path);
+	btrfs_del_item(trans, dedup_root, path);
 
 out:
 	btrfs_free_path(path);
@@ -675,6 +650,8 @@ static void inmem_destroy(struct btrfs_fs_info *fs_info)
 
 int btrfs_dedup_disable(struct btrfs_fs_info *fs_info)
 {
+	printk(KERN_ERR " ##### In %s ##### \n", __func__);
+
 	struct btrfs_dedup_info *dedup_info = fs_info->dedup_info;
 	int ret = 0;
 
@@ -699,6 +676,8 @@ int btrfs_dedup_disable(struct btrfs_fs_info *fs_info)
 static int ondisk_search_hash(struct btrfs_dedup_info *dedup_info, u8 *hash,
 			      u64 *bytenr_ret, u32 *num_bytes_ret)
 {
+	printk(KERN_ERR " ##### In %s ##### \n", __func__);
+
 	struct btrfs_path *path;
 	struct btrfs_key key;
 	struct btrfs_root *dedup_root = dedup_info->dedup_root;
@@ -770,6 +749,8 @@ out:
 static struct inmem_hash *
 inmem_search_hash(struct btrfs_dedup_info *dedup_info, u8 *hash)
 {
+	printk(KERN_ERR " ##### In %s ##### \n", __func__);
+
 	struct rb_node **p = &dedup_info->hash_root.rb_node;
 	struct rb_node *parent = NULL;
 	struct inmem_hash *entry = NULL;
@@ -799,6 +780,8 @@ static inline int generic_search_hash(struct btrfs_dedup_info *dedup_info,
 				      u8 *hash, u64 *bytenr_ret,
 				      u32 *num_bytes_ret)
 {
+	printk(KERN_ERR " ##### In %s ##### \n", __func__);
+
 	if (dedup_info->backend == BTRFS_DEDUP_BACKEND_INMEMORY) {
 		struct inmem_hash *found_hash;
 		int ret;
@@ -824,6 +807,8 @@ static inline int generic_search_hash(struct btrfs_dedup_info *dedup_info,
 static int generic_search(struct inode *inode, u64 file_pos,
 			struct btrfs_dedup_hash *hash)
 {
+	printk(KERN_ERR " ##### In %s ##### \n", __func__);
+
 	int ret;
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	struct btrfs_fs_info *fs_info = root->fs_info;
@@ -915,6 +900,8 @@ out:
 int btrfs_dedup_search(struct inode *inode, u64 file_pos,
 		       struct btrfs_dedup_hash *hash)
 {
+	printk(KERN_ERR " ##### In %s ##### \n", __func__);
+
 	struct btrfs_fs_info *fs_info = BTRFS_I(inode)->root->fs_info;
 	struct btrfs_dedup_info *dedup_info = fs_info->dedup_info;
 	int ret = 0;
@@ -936,6 +923,8 @@ int btrfs_dedup_search(struct inode *inode, u64 file_pos,
 static int hash_data(struct btrfs_dedup_info *dedup_info, const char *data,
 		     u64 length, struct btrfs_dedup_hash *hash)
 {
+	printk(KERN_ERR " ##### In %s ##### \n", __func__);
+	
 	struct crypto_shash *tfm = dedup_info->dedup_driver;
 	struct {
 		struct shash_desc desc;
@@ -948,6 +937,8 @@ static int hash_data(struct btrfs_dedup_info *dedup_info, const char *data,
 
 	ret = crypto_shash_digest(&sdesc.desc, data, length,
 				  (char *)(hash->hash));
+
+	printk(KERN_INFO "%s : crypto_shash_digest returned %d #####_______ \n", __func__, ret);
 	return ret;
 }
 
@@ -990,6 +981,49 @@ int btrfs_dedup_calc_hash(struct btrfs_root *root, struct inode *inode,
 	}
 	ret = hash_data(dedup_info, data, dedup_bs, hash);
 out:
+	kfree(data);
+	return ret;
+}
+
+
+int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
+			  u64 start, u64 end, struct btrfs_dedup_hash *hash)
+{
+	printk(KERN_ERR " ##### In %s ##### \n", __func__);
+
+	struct page *p;
+	struct btrfs_dedup_info *dedup_info = root->fs_info->dedup_info;
+	char *data;
+	int i;
+	int ret;
+	u64 len;
+	u64 sectorsize = root->sectorsize;
+
+	if (!dedup_info || !hash)
+		return 0;
+
+	WARN_ON(!IS_ALIGNED(start, sectorsize));
+
+	len = end-start+1;
+	data = kmalloc(len, GFP_NOFS);
+	if (!data) {
+		printk(KERN_INFO "%s : kmalloc failed #####_______ \n", __func__);
+		return -ENOMEM;
+	}
+	for (i = 0; sectorsize * i < len; i++) {
+		char *d;
+
+		/* TODO: Add support for subpage size case */
+		p = find_get_page(inode->i_mapping,
+				  (start >> PAGE_CACHE_SHIFT) + i);
+		WARN_ON(!p);
+		d = kmap_atomic(p);
+		memcpy((data + sectorsize * i), d, sectorsize);
+		kunmap_atomic(d);
+		page_cache_release(p);
+	}
+	ret = hash_data(dedup_info, data, len, hash);
+	printk(KERN_INFO "%s : hash_data returned %d #####_______ \n", __func__, ret);
 	kfree(data);
 	return ret;
 }
