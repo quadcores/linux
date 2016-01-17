@@ -201,7 +201,7 @@ out:
 	return ret;
 }
 
-int btrfs_cbs_enable(struct btrfs_fs_info *fs_info, u16 type,
+/*int btrfs_cbs_enable(struct btrfs_fs_info *fs_info, u16 type,
 		       u64 blocksize, u64 limit)
 {
 	printk(KERN_ERR " ##### In %s ##### \n", __func__);
@@ -215,21 +215,21 @@ int btrfs_cbs_enable(struct btrfs_fs_info *fs_info, u16 type,
 	u64 compat_ro_flag = btrfs_super_compat_ro_flags(fs_info->super_copy);
 	int ret = 0;
 
-	/* Meaningless and unable to enable cbs for RO fs */
+	/* Meaningless and unable to enable cbs for RO fs 
 	if (fs_info->sb->s_flags & MS_RDONLY)
 		return -EINVAL;
 
 	if (fs_info->cbs_info) {
 		cbs_info = fs_info->cbs_info;
 
-		/* Check if we are re-enable for different cbs config */
+		/* Check if we are re-enable for different cbs config 
 		if (cbs_info->hash_type != type)
 		{
 			btrfs_cbs_disable(fs_info);
 			goto enable;
 		}
 
-		/* On-fly limit change is OK */
+		/* On-fly limit change is OK 
 		mutex_lock(&cbs_info->lock);
 		fs_info->cbs_info->limit_nr = limit;
 		mutex_unlock(&cbs_info->lock);
@@ -247,7 +247,7 @@ enable:
 	if (!create_tree)
 		goto out;
 
-	/* Create cbs tree for status at least */
+	/* Create cbs tree for status at least 
 	path = btrfs_alloc_path();
 	if (!path) {
 		ret = -ENOMEM;
@@ -299,7 +299,7 @@ out:
 	}
 	return ret;
 }
-
+*/
 int btrfs_dedup_resume(struct btrfs_fs_info *fs_info,
 		       struct btrfs_root *dedup_root)
 {
