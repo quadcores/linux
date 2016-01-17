@@ -103,6 +103,9 @@ struct btrfs_ordered_sum;
 /* on-disk dedup tree (EXPERIMENTAL) */
 #define BTRFS_DEDUP_TREE_OBJECTID 11ULL
 
+/* on-disk cbs tree (EXPERIMENTAL) */
+#define BTRFS_CBS_TREE_OBJECTID 12ULL
+
 /* for storing balance parameters in the root tree */
 #define BTRFS_BALANCE_OBJECTID -4ULL
 
@@ -509,6 +512,7 @@ struct btrfs_super_block {
  */
 #define BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE	(1ULL << 0)
 #define BTRFS_FEATURE_COMPAT_RO_DEDUP		(1ULL << 1)
+#define BTRFS_FEATURE_COMPAT_RO_CBS		(1ULL << 2)
 
 #define BTRFS_FEATURE_INCOMPAT_MIXED_BACKREF	(1ULL << 0)
 #define BTRFS_FEATURE_INCOMPAT_DEFAULT_SUBVOL	(1ULL << 1)
@@ -539,7 +543,8 @@ struct btrfs_super_block {
 
 #define BTRFS_FEATURE_COMPAT_RO_SUPP			\
 	(BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE |	\
-	 BTRFS_FEATURE_COMPAT_RO_DEDUP)
+	 BTRFS_FEATURE_COMPAT_RO_DEDUP |	\
+	 BTRFS_FEATURE_COMPAT_RO_CBS)
 
 #define BTRFS_FEATURE_COMPAT_RO_SAFE_SET	0ULL
 #define BTRFS_FEATURE_COMPAT_RO_SAFE_CLEAR	0ULL
@@ -982,6 +987,15 @@ struct btrfs_dedup_status_item {
 } __attribute__ ((__packed__));
 
 /*
+ * Objectid: 0
+ * Type: BTRFS_CBS_STATUS_ITEM_KEY
+ * Offset: 0
+ */
+struct btrfs_cbs_status_item {
+	__le16 hash_type;
+} __attribute__ ((__packed__));
+
+/*
  * Objectid: Last 64 bit of the hash
  * Type: BTRFS_DEDUP_HASH_ITEM_KEY
  * Offset: Bytenr of the hash
@@ -990,6 +1004,26 @@ struct btrfs_dedup_status_item {
  * XXX: On-disk format not stable yet, see the unsed one
  */
 struct btrfs_dedup_hash_item {
+	/* on disk length of dedup range */
+	__le64 len;
+
+	/* Spare space */
+	u8 __unused[16];
+
+	/* Hash follows */
+} __attribute__ ((__packed__));
+
+/*
+	len, __unused -> unknown purpose
+
+ * Objectid: Last 64 bit of the hash
+ * Type: BTRFS_CBS_HASH_ITEM_KEY
+ * Offset: Bytenr of the hash
+ *
+ * Used for hash <-> bytenr search
+ * XXX: On-disk format not stable yet, see the unsed one
+ */
+struct btrfs_cbs_hash_item {
 	/* on disk length of dedup range */
 	__le64 len;
 
@@ -1909,6 +1943,10 @@ struct btrfs_fs_info {
 	/* reference to inband de-duplication info */
 	struct btrfs_dedup_info *dedup_info;
 	struct mutex dedup_ioctl_mutex;
+
+	/* reference to cbs info */
+	struct btrfs_cbs_info *cbs_info;
+	struct mutex cbs_ioctl_mutex;
 };
 
 struct btrfs_subvolume_writers {
@@ -2216,6 +2254,13 @@ struct btrfs_ioctl_defrag_range_args {
 #define BTRFS_DEDUP_STATUS_ITEM_KEY	230
 #define BTRFS_DEDUP_HASH_ITEM_KEY	231
 #define BTRFS_DEDUP_BYTENR_ITEM_KEY	232
+
+/*
+ * CBS item and status
+ */
+#define BTRFS_CBS_STATUS_ITEM_KEY	233
+#define BTRFS_CBS_HASH_ITEM_KEY	234
+#define BTRFS_CBS_BYTENR_ITEM_KEY	235
 
 /*
  * Records the overall state of the qgroups.
@@ -3291,8 +3336,15 @@ BTRFS_SETGET_FUNCS(dedup_status_hash_type, struct btrfs_dedup_status_item,
 BTRFS_SETGET_FUNCS(dedup_status_backend, struct btrfs_dedup_status_item,
 		   backend, 16);
 
+/* btrfs_cbs_status */
+BTRFS_SETGET_FUNCS(cbs_status_hash_type, struct btrfs_cbs_status_item,
+		   hash_type, 16);
+
 /* btrfs_dedup_hash_item */
 BTRFS_SETGET_FUNCS(dedup_hash_len, struct btrfs_dedup_hash_item, len, 64);
+
+/* btrfs_cbs_hash_item */
+BTRFS_SETGET_FUNCS(cbs_hash_len, struct btrfs_cbs_hash_item, len, 64);
 
 /* struct btrfs_file_extent_item */
 BTRFS_SETGET_FUNCS(file_extent_type, struct btrfs_file_extent_item, type, 8);
