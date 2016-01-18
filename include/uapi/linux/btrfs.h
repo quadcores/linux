@@ -467,6 +467,17 @@ struct btrfs_ioctl_dedup_args {
 	u8 __unused[473];
 };
 
+#define BTRFS_CBS_CTL_ENABLE	5
+#define BTRFS_CBS_CTL_DISABLE   6
+#define BTRFS_CBS_CTL_STATUS	7
+struct btrfs_ioctl_cbs_args {
+	__u16 cmd;		/* In: command(see above macro) */
+	__u16 hash_type;	/* In/Out: For enable/status */
+	u8 status;		/* Out: For status output */
+	/* pad to 512 bytes */
+	u8 __unused[473];
+};
+
 #define BTRFS_QUOTA_CTL_ENABLE	1
 #define BTRFS_QUOTA_CTL_DISABLE	2
 #define BTRFS_QUOTA_CTL_RESCAN__NOTUSED	3
@@ -677,6 +688,8 @@ static inline char *btrfs_err_str(enum btrfs_err_code err_code)
 					 struct btrfs_ioctl_same_args)
 #define BTRFS_IOC_DEDUP_CTL	_IOWR(BTRFS_IOCTL_MAGIC, 55, \
 				      struct btrfs_ioctl_dedup_args)
+#define BTRFS_IOC_CBS_CTL	_IOWR(BTRFS_IOCTL_MAGIC, 56, \
+				      struct btrfs_ioctl_cbs_args)
 #define BTRFS_IOC_GET_FEATURES _IOR(BTRFS_IOCTL_MAGIC, 57, \
 				   struct btrfs_ioctl_feature_flags)
 #define BTRFS_IOC_SET_FEATURES _IOW(BTRFS_IOCTL_MAGIC, 57, \

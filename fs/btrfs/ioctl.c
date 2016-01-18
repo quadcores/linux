@@ -60,6 +60,7 @@
 #include "sysfs.h"
 #include "qgroup.h"
 #include "dedup.h"
+#include "cbs.h"
 
 #ifdef CONFIG_64BIT
 /* If we have a 32-bit userspace and 64-bit kernel, then the UAPI
@@ -3280,6 +3281,57 @@ out:
 	return ret;
 }
 
+static long btrfs_ioctl_cbs_ctl(struct btrfs_root *root, void __user *args)
+{
+    printk(KERN_INFO " ##### In %s ##### \n", __func__);
+	struct btrfs_ioctl_cbs_args *dargs;
+	struct btrfs_fs_info *fs_info = root->fs_info;
+	struct btrfs_cbs_info *cbs_info;
+	int ret;
+
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	dargs = memdup_user(args, sizeof(*dargs));
+	if (IS_ERR(dargs)) {
+		ret = PTR_ERR(dargs);
+		return ret;
+	}
+
+	if (dargs->cmd >= BTRFS_CBS_CTL_LAST) {
+		ret = -EINVAL;
+		goto out;
+	}
+	switch (dargs->cmd) {
+	case BTRFS_CBS_CTL_ENABLE:
+		ret = btrfs_cbs_enable(fs_info, dargs->hash_type);
+		break;
+	case BTRFS_CBS_CTL_DISABLE:
+		ret = btrfs_cbs_disable(fs_info);
+		break;
+	case BTRFS_CBS_CTL_STATUS:
+		cbs_info = fs_info->cbs_info;
+		if (cbs_info) {
+			dargs->status = 1;
+			dargs->hash_type = dedup_info->hash_type;
+		} else {
+			dargs->status = 0;
+			dargs->hash_type = 0;
+		}
+		if (copy_to_user(args, dargs, sizeof(*dargs)))
+			ret = -EFAULT;
+		else
+			ret = 0;
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+	}
+out:
+	kfree(dargs);
+	return ret;
+}
+
 static int clone_finish_inode_update(struct btrfs_trans_handle *trans,
 				     struct inode *inode,
 				     u64 endoff,
@@ -5645,9 +5697,10 @@ long btrfs_ioctl(struct file *file, unsigned int
 	case BTRFS_IOC_FILE_EXTENT_SAME:
 		return btrfs_ioctl_file_extent_same(file, argp);
 	case BTRFS_IOC_DEDUP_CTL:
-
 		temp_ret = btrfs_ioctl_dedup_ctl(root, argp);
-		printk(KERN_INFO "temp_ret = %d\n", temp_ret);
+		return temp_ret;
+	case BTRFS_IOC_CBS_CTL:
+		temp_ret = btrfs_ioctl_cbs_ctl(root, argp);
 		return temp_ret;
 	case BTRFS_IOC_GET_SUPPORTED_FEATURES:
 		return btrfs_ioctl_get_supported_features(file, argp);

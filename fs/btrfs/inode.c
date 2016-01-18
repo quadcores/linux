@@ -686,7 +686,6 @@ static inline int inode_need_dedup(struct inode *inode)
 	return 1;
 }
 
-
 static int submit_dedup_extent(struct inode *inode, u64 start,
 			       unsigned long len, u64 disk_start, int dedup)
 {
@@ -749,6 +748,164 @@ static int submit_dedup_extent(struct inode *inode, u64 start,
 	}
 
 	return ret;
+}
+
+/*
+ * Run cbs for delalloc range
+ * Will calculate the hash for the range.
+ */
+static noinline int
+run_delalloc_cbs(struct inode *inode, struct page *locked_page, u64 start,
+		   u64 end, struct async_cow *async_cow)
+{
+	printk(KERN_INFO " #### In %s ####\n", __func__);
+
+	struct btrfs_root *root = BTRFS_I(inode)->root;
+	struct extent_map_tree *em_tree = &BTRFS_I(inode)->extent_tree;
+	struct extent_io_tree *tree = &BTRFS_I(inode)->io_tree;
+	struct page *page = NULL;
+	struct btrfs_key ins;
+	u64 blocksize = root->sectorsize;
+	u64 num_bytes;
+	u64 cur_alloc_size;
+	u64 cur_end;
+	u64 alloc_hint = 0;
+	int found = 0;
+	int type = 0;
+	int ret = 0;
+	int quad_ctr = 0;
+	struct extent_state *cached_state = NULL;
+	struct btrfs_cbs_info *cbs_info = root->fs_info->cbs_info;
+	u16 hash_type = cbs_info->hash_type;
+	struct btrfs_cbs_hash *hash = NULL;
+	u64 hash_num_bytes;
+
+	WARN_ON(btrfs_is_free_space_inode(inode));
+
+	hash = btrfs_cbs_alloc_hash(hash_type);
+	if (!hash) {
+		printk(KERN_INFO " #### In %s, in if(!hash) ####\n", __func__);
+
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	btrfs_drop_extent_cache(inode, start, start + num_bytes - 1, 0);
+
+	unsigned long op = 0;
+
+	/* cbs full file hash calculation */
+
+	hash_num_bytes = ALIGN(i_size_read(inode), blocksize);
+
+	printk(KERN_INFO "____________________________##### start = %lu, end = %lu #### ______\n", start, end);
+
+	if(hash_num_bytes-1 == end)
+	{
+		printk(KERN_INFO "______#### Calling CBS_CALC_HASH #####_______ \n");
+
+		ret = btrfs_cbs_calc_hash(root, inode, 0, i_size_read(inode)-1, hash);
+		if (ret < 0) {
+			printk(KERN_INFO "______#### error %d #####_______ \n", ret);
+			goto out;
+		}
+
+		printk(KERN_INFO "_______________#### Ultimate hash is #####_______________ \n");
+		for(quad_ctr=0;quad_ctr<32;quad_ctr++)
+			printk(KERN_CONT "%hhx",hash -> hash[quad_ctr]);
+
+		printk(KERN_INFO "______#### CBS_CALC_HASH successful #####_______ \n");
+	}
+
+	/* see comments in compress_file_range */
+	extent_range_clear_dirty_for_io(inode, start, end);
+
+	found = btrfs_cbs_search(inode, start, hash);
+
+	if (found == 0) {
+		/* Cbs hash miss, normal routine */
+		ret = btrfs_reserve_extent(root, cur_alloc_size,
+				   cur_alloc_size, 0, alloc_hint,
+				   &ins, 1, 1);
+		if (ret < 0)
+			goto out;
+	} else {
+		/* Cbs hash hit, only insert file extent */
+		ins.objectid = hash->bytenr;
+		ins.offset = hash->num_bytes;
+	}
+
+	lock_extent(tree, start, end);
+
+	em = alloc_extent_map();
+	if (!em) {
+		ret = -ENOMEM;
+		goto out_reserve;
+	}
+	em->start = start;
+	em->orig_start = em->start;
+	em->len = cur_alloc_size;
+	em->mod_start = em->start;
+	em->mod_len = em->len;
+
+	em->block_start = ins.objectid;
+	em->block_len = ins.offset;
+	em->orig_block_len = ins.offset;
+	em->bdev = root->fs_info->fs_devices->latest_bdev;
+	set_bit(EXTENT_FLAG_PINNED, &em->flags);
+	em->generation = -1;
+
+	while (1) {
+		write_lock(&em_tree->lock);
+		ret = add_extent_mapping(em_tree, em, 1);
+		write_unlock(&em_tree->lock);
+		if (ret != -EEXIST) {
+			free_extent_map(em);
+			break;
+		}
+		btrfs_drop_extent_cache(inode, start, end, 0);
+	}
+	if (ret)
+		goto out_reserve;
+
+	ret = btrfs_add_ordered_extent_cbs(inode, start, ins.objectid,
+					     cur_alloc_size, ins.offset,
+					     type, hash);
+	if (ret)
+		goto out_reserve;
+
+	op |= PAGE_SET_WRITEBACK | PAGE_CLEAR_DIRTY;
+	extent_clear_unlock_delalloc(inode, start, end,
+				     NULL,
+				     EXTENT_LOCKED | EXTENT_DELALLOC,
+				     op);
+
+	ret = submit_cbs_extent(inode, start, cur_alloc_size,
+				  ins.objectid, found);
+	if (ret)
+		break;
+
+	num_bytes = 0;
+	alloc_hint = ins.objectid + cur_alloc_size;
+	start += cur_alloc_size;
+	cond_resched();
+
+out:
+	if (ret && num_bytes > 0)
+		extent_clear_unlock_delalloc(inode,
+			     start, start + num_bytes - 1, NULL,
+			     EXTENT_DELALLOC | EXTENT_LOCKED | EXTENT_DEFRAG,
+			     PAGE_UNLOCK | PAGE_SET_WRITEBACK |
+			     PAGE_END_WRITEBACK | PAGE_CLEAR_DIRTY);
+
+	kfree(hash);
+	free_extent_state(cached_state);
+	return ret;
+
+out_reserve:
+	if (found == 0)
+		btrfs_free_reserved_extent(root, ins.objectid, ins.offset, 1);
+	goto out;
 }
 
 /*
@@ -1419,6 +1576,16 @@ static noinline void async_cow_start(struct btrfs_work *work)
 	}
 	else {
 		printk(KERN_INFO " #### In %s, end = %lu ####\n", __func__, async_cow -> end);
+
+		hash_num_bytes = ALIGN(i_size_read(inode), blocksize);
+
+		if(hash_num_bytes-1 == end)
+		{
+			ret = run_delalloc_cbs(async_cow->inode,
+					async_cow->locked_page, async_cow->start,
+					async_cow->end, async_cow);
+		}
+		/* review check if cbs has deduped the complete file. if yes, don't dedup */
 
 		ret = run_delalloc_dedup(async_cow->inode,
 				async_cow->locked_page, async_cow->start,
