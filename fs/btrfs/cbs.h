@@ -23,7 +23,7 @@
 #include <crypto/hash.h>
 
 /*
- * Dedup storage backend
+ * Cbs storage backend
  * On disk is persist storage but overhead is large
  * In memory is fast but will lose all its hash on umount
  */
@@ -41,7 +41,7 @@ struct btrfs_cbs_hash {
 	u64 bytenr;
 	u32 num_bytes;
 
-	/* last field is a variable length array of dedup hash */
+	/* last field is a variable length array of cbs hash */
 	u8 hash[];
 };
 
@@ -74,8 +74,7 @@ static inline struct btrfs_cbs_hash *btrfs_cbs_alloc_hash(u16 type)
 /*
  * Called at cbs enable time.
  */
-int btrfs_cbs_enable(struct btrfs_fs_info *fs_info, u16 type,
-		       u64 blocksize, u64 limit);
+int btrfs_cbs_enable(struct btrfs_fs_info *fs_info, u16 type);
 
 /*
  * Disable cbs and invalidate all its cbs data.
@@ -101,11 +100,11 @@ int btrfs_cbs_cleanup(struct btrfs_fs_info *fs_info);
  * Caller must ensure [start, end] has valid data.
  */
 int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
-			  u64 start, u64 end, struct btrfs_dedup_hash *hash);
+			  u64 start, u64 end, struct btrfs_cbs_hash *hash);
 
 /*
  * Search for duplicated extents by calculated hash
- * Caller must call btrfs_dedup_calc_hash() first to get the hash.
+ * Caller must call btrfs_cbs_calc_hash() first to get the hash.
  *
  * @inode: the inode for we are writing
  * @file_pos: offset inside the inode
@@ -119,10 +118,10 @@ int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
  * Return <0 for error.
  *
  * Only on-disk backedn may return error though.
- *
-int btrfs_dedup_search(struct inode *inode, u64 file_pos,
-		       struct btrfs_dedup_hash *hash);
-*/
+ */
+int btrfs_cbs_search(struct inode *inode, u64 file_pos,
+		       struct btrfs_cbs_hash *hash);
+
 
 /* Add a cbs hash into cbs info */
 int btrfs_cbs_add(struct btrfs_trans_handle *trans, struct btrfs_root *root,

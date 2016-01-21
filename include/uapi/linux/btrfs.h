@@ -470,6 +470,7 @@ struct btrfs_ioctl_dedup_args {
 #define BTRFS_CBS_CTL_ENABLE	5
 #define BTRFS_CBS_CTL_DISABLE   6
 #define BTRFS_CBS_CTL_STATUS	7
+#define BTRFS_CBS_CTL_LAST		8
 struct btrfs_ioctl_cbs_args {
 	__u16 cmd;		/* In: command(see above macro) */
 	__u16 hash_type;	/* In/Out: For enable/status */

@@ -34,7 +34,6 @@ static int init_cbs_info(struct btrfs_fs_info *fs_info, u16 type)
 	cbs_info = fs_info->cbs_info;
 
 	cbs_info->hash_type = type;
-	cbs_info->limit_nr = limit;
 
 	/* Only support SHA256 yet */
 	cbs_info->cbs_driver = crypto_alloc_shash("sha256", 0, 0);
@@ -46,13 +45,12 @@ static int init_cbs_info(struct btrfs_fs_info *fs_info, u16 type)
 		return ret;
 	}
 
-	INIT_LIST_HEAD(&cbs_info->lru_list);
+	//INIT_LIST_HEAD(&cbs_info->lru_list);
 	mutex_init(&cbs_info->lock);
 	return 0;
 }
 
-int btrfs_cbs_enable(struct btrfs_fs_info *fs_info, u16 type,
-		       u64 blocksize, u64 limit)
+int btrfs_cbs_enable(struct btrfs_fs_info *fs_info, u16 type)
 {
 	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 	struct btrfs_cbs_info *cbs_info;
@@ -79,17 +77,13 @@ int btrfs_cbs_enable(struct btrfs_fs_info *fs_info, u16 type,
 			goto enable;
 		}
 
-		/* On-fly limit change is OK */
-		mutex_lock(&cbs_info->lock);
-		fs_info->cbs_info->limit_nr = limit;
-		mutex_unlock(&cbs_info->lock);
 		return 0;
 	}
 
 enable:
 	create_tree = compat_ro_flag & BTRFS_FEATURE_COMPAT_RO_CBS;
 
-	ret = init_cbs_info(fs_info, type, limit);
+	ret = init_cbs_info(fs_info, type);
 	cbs_info = fs_info->cbs_info;
 	if (ret < 0)
 		goto out;
@@ -135,7 +129,6 @@ enable:
 	}
 	status = btrfs_item_ptr(path->nodes[0], path->slots[0],
 				struct btrfs_cbs_status_item);
-	btrfs_set_cbs_status_limit(path->nodes[0], status, limit);
 	btrfs_set_cbs_status_hash_type(path->nodes[0], status, type);
 	btrfs_mark_buffer_dirty(path->nodes[0]);
 
@@ -302,9 +295,7 @@ int btrfs_cbs_add(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 	if (WARN_ON(hash->bytenr == 0))
 		return -EINVAL;
 
-	if (cbs_info->backend == BTRFS_CBS_BACKEND_ONDISK)
-		return ondisk_add(trans, cbs_info, hash);
-	return -EINVAL;
+	return ondisk_add(trans, cbs_info, hash);
 }
 
 /*
@@ -407,7 +398,7 @@ int btrfs_cbs_del(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 	struct btrfs_cbs_info *cbs_info = fs_info->cbs_info;
 
 	if (!cbs_info)
-		return ondisk_del(trans, dedup_info, bytenr);
+		return ondisk_del(trans, cbs_info, bytenr);
 
 	return -EINVAL;
 }
@@ -623,16 +614,14 @@ int btrfs_cbs_search(struct inode *inode, u64 file_pos,
 	if (WARN_ON(!cbs_info || !hash))
 		return 0;
 
-	if (cbs_info->backend < BTRFS_CBS_BACKEND_LAST) {
-		ret = generic_search(inode, file_pos, hash);
-		if (ret == 0) {
-			hash->num_bytes = 0;
-			hash->bytenr = 0;
-		}
-		return ret;
+	ret = generic_search(inode, file_pos, hash);
+	if (ret == 0) {
+		hash->num_bytes = 0;			
+		hash->bytenr = 0;
 	}
-	return -EINVAL;
-}
+	return ret;
+
+	}
 
 static int hash_data(struct btrfs_cbs_info *cbs_info, const char *data,
 		     u64 length, struct btrfs_cbs_hash *hash)
@@ -658,19 +647,19 @@ static int hash_data(struct btrfs_cbs_info *cbs_info, const char *data,
 
 
 int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
-			  u64 start, u64 end, struct btrfs_dedup_hash *hash)
+			  u64 start, u64 end, struct btrfs_cbs_hash *hash)
 {
 	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 
 	struct page *p;
-	struct btrfs_dedup_info *dedup_info = root->fs_info->dedup_info;
+	struct btrfs_cbs_info *cbs_info = root->fs_info->cbs_info;
 	char *data;
 	int i;
 	int ret;
 	u64 len;
 	u64 sectorsize = root->sectorsize;
 
-	if (!dedup_info || !hash)
+	if (!cbs_info || !hash)
 		return 0;
 
 	WARN_ON(!IS_ALIGNED(start, sectorsize));
@@ -693,7 +682,7 @@ int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
 		kunmap_atomic(d);
 		page_cache_release(p);
 	}
-	ret = hash_data(dedup_info, data, len, hash);
+	ret = hash_data(cbs_info, data, len, hash);
 	printk(KERN_INFO "%s : hash_data returned %d #####_______ \n", __func__, ret);
 	kfree(data);
 	return ret;

@@ -125,12 +125,6 @@ int btrfs_dedup_calc_hash(struct btrfs_root *root, struct inode *inode,
 			  u64 start, struct btrfs_dedup_hash *hash);
 
 /*
- * Calculate hash for cbs (hash of the complete file). 
- */
-int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
-			  u64 start, u64 end, struct btrfs_dedup_hash *hash);
-
-/*
  * Search for duplicated extents by calculated hash
  * Caller must call btrfs_dedup_calc_hash() first to get the hash.
  *

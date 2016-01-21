@@ -3313,7 +3313,7 @@ static long btrfs_ioctl_cbs_ctl(struct btrfs_root *root, void __user *args)
 		cbs_info = fs_info->cbs_info;
 		if (cbs_info) {
 			dargs->status = 1;
-			dargs->hash_type = dedup_info->hash_type;
+			dargs->hash_type = cbs_info->hash_type;
 		} else {
 			dargs->status = 0;
 			dargs->hash_type = 0;
