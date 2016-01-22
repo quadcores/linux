@@ -1024,7 +1024,7 @@ struct btrfs_dedup_hash_item {
  * XXX: On-disk format not stable yet, see the unsed one
  */
 struct btrfs_cbs_hash_item {
-	/* on disk length of dedup range */
+	/* on disk length of cbs range */
 	__le64 len;
 
 	/* Spare space */
@@ -2446,6 +2446,7 @@ do {                                                                   \
 #define BTRFS_INODE_DIRSYNC			(1 << 10)
 #define BTRFS_INODE_COMPRESS		(1 << 11)
 #define BTRFS_INODE_NODEDUP			(1 << 12)
+#define BTRFS_INODE_NOCBS			(1 << 13)
 
 #define BTRFS_INODE_ROOT_ITEM_INIT	(1 << 31)
 

@@ -21,6 +21,7 @@
 #include "transaction.h"
 #include "delayed-ref.h"
 #include "disk-io.h"
+#include <linux/vmalloc.h>
 
 static int init_dedup_info(struct btrfs_fs_info *fs_info, u16 type, u16 backend,
 			   u64 blocksize, u64 limit)
@@ -103,8 +104,8 @@ int btrfs_dedup_enable(struct btrfs_fs_info *fs_info, u16 type, u16 backend,
 	if (backend == BTRFS_DEDUP_BACKEND_INMEMORY && limit == 0)
 		limit = 4096; /* default value */
 	if (backend == BTRFS_DEDUP_BACKEND_ONDISK) {
-		btrfs_set_fs_compat_ro(fs_info, DEDUP);
 		limit = 0;
+		btrfs_set_fs_compat_ro(fs_info, DEDUP);
 	}
 
 	compat_ro_flag = btrfs_super_compat_ro_flags(fs_info->super_copy);

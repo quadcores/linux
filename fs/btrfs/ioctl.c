@@ -3295,11 +3295,13 @@ static long btrfs_ioctl_cbs_ctl(struct btrfs_root *root, void __user *args)
 	dargs = memdup_user(args, sizeof(*dargs));
 	if (IS_ERR(dargs)) {
 		ret = PTR_ERR(dargs);
+		    printk(KERN_INFO " ##### In %s : memdup user ret = %d ##### \n", __func__, ret);
 		return ret;
 	}
 
 	if (dargs->cmd >= BTRFS_CBS_CTL_LAST) {
 		ret = -EINVAL;
+	    printk(KERN_INFO " ##### In %s : memdup user ret = %d ##### \n", __func__, ret);
 		goto out;
 	}
 	switch (dargs->cmd) {
@@ -5568,7 +5570,6 @@ long btrfs_ioctl(struct file *file, unsigned int
 		cmd, unsigned long arg)
 {	
 	int temp_ret;
-	printk(KERN_INFO "#### %lx in kernel %lx ####### \n",cmd, BTRFS_IOC_DEDUP_CTL);
 	struct btrfs_root *root = BTRFS_I(file_inode(file))->root;
 	void __user *argp = (void __user *)arg;
 

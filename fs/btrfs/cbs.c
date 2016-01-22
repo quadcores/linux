@@ -21,6 +21,8 @@
 #include "transaction.h"
 #include "delayed-ref.h"
 #include "disk-io.h"
+#include "dedup.h" // review 
+#include <linux/vmalloc.h>
 
 static int init_cbs_info(struct btrfs_fs_info *fs_info, u16 type)
 {
@@ -60,8 +62,11 @@ int btrfs_cbs_enable(struct btrfs_fs_info *fs_info, u16 type)
 	struct btrfs_path *path;
 	struct btrfs_cbs_status_item *status;
 	int create_tree;
-	u64 compat_ro_flag = btrfs_super_compat_ro_flags(fs_info->super_copy);
+	u64 compat_ro_flag;
 	int ret = 0;
+
+	btrfs_set_fs_compat_ro(fs_info, CBS);
+	compat_ro_flag = btrfs_super_compat_ro_flags(fs_info->super_copy);
 
 	/* Meaningless and unable to enable cbs for RO fs */
 	if (fs_info->sb->s_flags & MS_RDONLY)
@@ -140,6 +145,9 @@ out:
 		kfree(cbs_info);
 		fs_info->cbs_info = NULL;
 	}
+
+	printk(KERN_ERR " ##### Exiting %s ##### \n", __func__);
+
 	return ret;
 }
 
@@ -623,12 +631,12 @@ int btrfs_cbs_search(struct inode *inode, u64 file_pos,
 
 	}
 
-static int hash_data(struct btrfs_cbs_info *cbs_info, const char *data,
-		     u64 length, struct btrfs_cbs_hash *hash)
+static int hash_data(struct btrfs_dedup_info *cbs_info, const char *data, // review 
+		     u64 length, struct btrfs_dedup_hash *hash)
 {
 	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 	
-	struct crypto_shash *tfm = cbs_info->cbs_driver;
+	struct crypto_shash *tfm = cbs_info->dedup_driver; // review 
 	struct {
 		struct shash_desc desc;
 		char ctx[crypto_shash_descsize(tfm)];
@@ -645,14 +653,13 @@ static int hash_data(struct btrfs_cbs_info *cbs_info, const char *data,
 	return ret;
 }
 
-
 int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
-			  u64 start, u64 end, struct btrfs_cbs_hash *hash)
+			  u64 start, u64 end, struct btrfs_dedup_hash *hash)
 {
 	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 
 	struct page *p;
-	struct btrfs_cbs_info *cbs_info = root->fs_info->cbs_info;
+	struct btrfs_dedup_info *cbs_info = root->fs_info->dedup_info; // review 
 	char *data;
 	int i;
 	int ret;
@@ -665,9 +672,9 @@ int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
 	WARN_ON(!IS_ALIGNED(start, sectorsize));
 
 	len = end-start+1;
-	data = kmalloc(len, GFP_NOFS);
+	data = vmalloc(len);
 	if (!data) {
-		printk(KERN_INFO "%s : kmalloc failed #####_______ \n", __func__);
+		printk(KERN_INFO "%s : vmalloc failed #####_______ \n", __func__);
 		return -ENOMEM;
 	}
 	for (i = 0; sectorsize * i < len; i++) {
@@ -684,6 +691,6 @@ int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
 	}
 	ret = hash_data(cbs_info, data, len, hash);
 	printk(KERN_INFO "%s : hash_data returned %d #####_______ \n", __func__, ret);
-	kfree(data);
+	vfree(data);
 	return ret;
 }

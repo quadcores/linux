@@ -687,6 +687,20 @@ static inline int inode_need_dedup(struct inode *inode)
 	return 1;
 }
 
+static inline int inode_need_cbs(struct inode *inode)
+{
+	struct btrfs_root *root = BTRFS_I(inode)->root;
+	struct btrfs_cbs_info *cbs_info = root->fs_info->cbs_info;
+
+	if (!cbs_info)
+		return 0;
+
+	if (BTRFS_I(inode)->flags & BTRFS_INODE_NOCBS)
+		return 0;
+
+	return 1;
+}
+
 static int submit_dedup_extent(struct inode *inode, u64 start,
 			       unsigned long len, u64 disk_start, int dedup)
 {
@@ -825,7 +839,6 @@ run_delalloc_cbs(struct inode *inode, struct page *locked_page, u64 start,
 		/* Cbs hash miss, normal routine */
 
 		
-		
 		/* tree insertion code here */
 	} else {
 		/* decrement ref count */
@@ -866,9 +879,13 @@ run_delalloc_dedup(struct inode *inode, struct page *locked_page, u64 start,
 	struct extent_state *cached_state = NULL;
 	struct btrfs_dedup_info *dedup_info = root->fs_info->dedup_info;
 	u64 dedup_bs = dedup_info->blocksize;
+
 	u16 hash_type = dedup_info->hash_type;
 	struct btrfs_dedup_hash *hash = NULL;
+
+	u16 cbs_hash_type = dedup_info->hash_type;
 	struct btrfs_cbs_hash *cbs_hash = NULL;
+
 	u64 hash_num_bytes;
 
 	WARN_ON(btrfs_is_free_space_inode(inode));
@@ -885,13 +902,21 @@ run_delalloc_dedup(struct inode *inode, struct page *locked_page, u64 start,
 		goto out;
 	}
 
+	cbs_hash = btrfs_cbs_alloc_hash(cbs_hash_type);
+	if (!cbs_hash) {
+		printk(KERN_INFO " #### In %s, in if(!hash) ####\n", __func__);
+
+		ret = -ENOMEM;
+		goto out;
+	}
+
 	btrfs_drop_extent_cache(inode, start, start + num_bytes - 1, 0);
 
 	while (num_bytes > 0) {
 
 		unsigned long op = 0;
 
-		/* cbs full file hash calculation */
+		/* cbs full file hash calculation
 
 		hash_num_bytes = ALIGN(i_size_read(inode), blocksize);
 
@@ -909,7 +934,7 @@ run_delalloc_dedup(struct inode *inode, struct page *locked_page, u64 start,
 
 			printk(KERN_INFO "_______________#### Ultimate hash is #####_______________ \n");
 			for(quad_ctr=0;quad_ctr<32;quad_ctr++)
-				printk(KERN_CONT "%hhx",cbs_hash -> hash[quad_ctr]);
+				printk(KERN_CONT "%hhx", cbs_hash -> hash[quad_ctr]);
 
 			printk(KERN_INFO "______#### CBS_CALC_HASH successful #####_______ \n");
 		}
@@ -942,14 +967,14 @@ run_delalloc_dedup(struct inode *inode, struct page *locked_page, u64 start,
 
 			/* allocate blocks */
 
-			printk(KERN_INFO " #### In %s, calling cow_file_range ####\n", __func__);
+			printk_once(KERN_INFO " #### In %s, calling cow_file_range ####\n", __func__);
 		
 			ret = cow_file_range(inode, page, start, cur_end,
 					     &page_started, &nr_written, 0);
 
 			if (!page_started && !ret) {
 
-				printk(KERN_INFO " #### In %s, calling extent_write_locked_range ####\n", __func__);
+				printk_once(KERN_INFO " #### In %s, calling extent_write_locked_range ####\n", __func__);
 			
 				extent_write_locked_range(tree, inode, start,
 						cur_end, btrfs_get_extent,
@@ -960,12 +985,12 @@ run_delalloc_dedup(struct inode *inode, struct page *locked_page, u64 start,
 
 			if (ret) {
 
-				printk(KERN_INFO " #### In %s, calling SetPageError ####\n", __func__);
+				printk_once(KERN_INFO " #### In %s, calling SetPageError ####\n", __func__);
 			
 				SetPageError(page);
 			}
 
-			printk(KERN_INFO " #### In %s, calling page_cache_release ####\n", __func__);
+			printk_once(KERN_INFO " #### In %s, calling page_cache_release ####\n", __func__);
 
 			page_cache_release(page);
 			page = NULL;
@@ -973,11 +998,11 @@ run_delalloc_dedup(struct inode *inode, struct page *locked_page, u64 start,
 			num_bytes = 0;
 			start += num_bytes;
 
-			printk(KERN_INFO " #### In %s, calling cond_resched ####\n", __func__);
+			printk_once(KERN_INFO " #### In %s, calling cond_resched ####\n", __func__);
 
 			cond_resched();
 
-			printk(KERN_INFO " #### In %s, called cond_resched ####\n", __func__);
+			printk_once(KERN_INFO " #### In %s, called cond_resched ####\n", __func__);
 
 			continue;
 		}
@@ -1073,6 +1098,7 @@ out:
 			     PAGE_END_WRITEBACK | PAGE_CLEAR_DIRTY);
 
 	kfree(hash);
+	kfree(cbs_hash);
 	free_extent_state(cached_state);
 	return ret;
 
@@ -1991,8 +2017,8 @@ static int run_delalloc_range(struct inode *inode, struct page *locked_page,
 
 		ret = run_delalloc_nocow(inode, locked_page, start, end,
 					 page_started, 0, nr_written);
-	} else if (!inode_need_compress(inode) && !inode_need_dedup(inode)) {
-		printk(KERN_INFO " ##### !inode_need_dedup ##### \n", __func__);
+	} else if (!inode_need_compress(inode) && !inode_need_dedup(inode) && !inode_need_cbs(inode)) {
+		printk(KERN_INFO " ##### !inode_need_dedup and !inode_need_cbs ##### \n", __func__);
 
 		ret = cow_file_range(inode, locked_page, start, end,
 				      page_started, nr_written, 1);

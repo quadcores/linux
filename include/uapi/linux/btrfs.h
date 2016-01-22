@@ -467,16 +467,16 @@ struct btrfs_ioctl_dedup_args {
 	u8 __unused[473];
 };
 
-#define BTRFS_CBS_CTL_ENABLE	5
-#define BTRFS_CBS_CTL_DISABLE   6
-#define BTRFS_CBS_CTL_STATUS	7
-#define BTRFS_CBS_CTL_LAST		8
+#define BTRFS_CBS_CTL_ENABLE	1
+#define BTRFS_CBS_CTL_DISABLE   2
+#define BTRFS_CBS_CTL_STATUS	3
+#define BTRFS_CBS_CTL_LAST		4
 struct btrfs_ioctl_cbs_args {
 	__u16 cmd;		/* In: command(see above macro) */
 	__u16 hash_type;	/* In/Out: For enable/status */
 	u8 status;		/* Out: For status output */
 	/* pad to 512 bytes */
-	u8 __unused[473];
+	u8 __unused[473 + 34];
 };
 
 #define BTRFS_QUOTA_CTL_ENABLE	1

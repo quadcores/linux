@@ -20,6 +20,7 @@
 #define __BTRFS_CBS__
 
 #include <linux/btrfs.h>
+#include "dedup.h"
 #include <crypto/hash.h>
 
 /*
@@ -100,7 +101,7 @@ int btrfs_cbs_cleanup(struct btrfs_fs_info *fs_info);
  * Caller must ensure [start, end] has valid data.
  */
 int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
-			  u64 start, u64 end, struct btrfs_cbs_hash *hash);
+			  u64 start, u64 end, struct btrfs_dedup_hash *hash);
 
 /*
  * Search for duplicated extents by calculated hash
@@ -121,7 +122,6 @@ int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
  */
 int btrfs_cbs_search(struct inode *inode, u64 file_pos,
 		       struct btrfs_cbs_hash *hash);
-
 
 /* Add a cbs hash into cbs info */
 int btrfs_cbs_add(struct btrfs_trans_handle *trans, struct btrfs_root *root,

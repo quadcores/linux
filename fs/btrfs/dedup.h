@@ -90,7 +90,6 @@ static inline struct btrfs_dedup_hash *btrfs_dedup_alloc_hash(u16 type)
 	return kzalloc(btrfs_dedup_hash_size(type), GFP_NOFS);
 }
 
-
 /*
  * Initial inband dedup info
  * Called at dedup enable time.
