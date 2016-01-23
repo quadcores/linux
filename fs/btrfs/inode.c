@@ -761,7 +761,6 @@ static int submit_dedup_extent(struct inode *inode, u64 start,
 		unlock_page(page);
 		page_cache_release(page);
 	}
-
 	return ret;
 }
 
@@ -774,14 +773,13 @@ run_delalloc_cbs(struct inode *inode, struct page *locked_page, u64 start,
 		   u64 end, struct async_cow *async_cow)
 {
 	printk(KERN_INFO " #### In %s ####\n", __func__);
-
+	int ret = 0;
 	struct btrfs_root *root = BTRFS_I(inode)->root;
-	//struct btrfs_key ins;
 	struct btrfs_trans_handle *trans = NULL;
-	//u64 alloc_hint = 0;
+	struct btrfs_root *cbs_root = root->fs_info->cbs_info->cbs_root;
 	u64 blocksize = root->sectorsize;
 	int found = 0;
-	int ret = 0;
+	
 	int quad_ctr = 0;
 	struct btrfs_cbs_info *cbs_info = root->fs_info->cbs_info;
 	u16 hash_type = cbs_info->hash_type;
@@ -790,24 +788,13 @@ run_delalloc_cbs(struct inode *inode, struct page *locked_page, u64 start,
 	bool nolock;
 
 	nolock = btrfs_is_free_space_inode(inode);
-	if (nolock)
-		trans = btrfs_join_transaction_nolock(root);
-	else
-		trans = btrfs_join_transaction(root);
-	if (IS_ERR(trans)) {
-		ret = PTR_ERR(trans);
-		trans = NULL;
-		goto out;
-	}
-
-	trans->block_rsv = &root->fs_info->delalloc_block_rsv;
 
 	hash = btrfs_cbs_alloc_hash(hash_type);
 	if (!hash) {
 		printk(KERN_INFO " #### In %s, in if(!hash) ####\n", __func__);
 
 		ret = -ENOMEM;
-		goto out;
+		return ret;
 	}
 
 	/* cbs full file hash calculation */
@@ -833,21 +820,40 @@ run_delalloc_cbs(struct inode *inode, struct page *locked_page, u64 start,
 		printk(KERN_INFO "______#### CBS_CALC_HASH successful #####_______ \n");
 	}
 
-	found = btrfs_cbs_search(inode, start, hash);
+	found = btrfs_cbs_search(inode, hash);
 
 	if (found == 0) {
 		/* Cbs hash miss, normal routine */
+		printk(KERN_INFO " #### In %s : Hash miss. ####\n", __func__);
+		hash->bytenr = 0;
+		hash->num_bytes = i_size_read(inode);
 
+		if (nolock)
+			trans = btrfs_join_transaction_nolock(root);
+		else 
+			trans = btrfs_join_transaction(root);
+
+		if (IS_ERR(trans)) {
+			ret = PTR_ERR(trans);
+			trans = NULL;
+			goto out;
+		}
+		trans->block_rsv = &root->fs_info->delalloc_block_rsv;
+
+		ret = btrfs_cbs_add(trans, cbs_root, hash);
 		
-		/* tree insertion code here */
+		printk(KERN_INFO " #### In %s : Hash insertion successful! %d ####\n", __func__, ret);
 	} else {
 		/* decrement ref count */
+		printk(KERN_INFO " #### In %s : Hash hit. Skipping insertion for now. ####\n", __func__);
 	}
 
 	out:
 		kfree(hash);
-		if(trans)
+		if(trans){
 			btrfs_end_transaction(trans, root);
+			printk(KERN_INFO " #### Transaction ended successfully #### \n");
+		}
 		return ret;
 }
 

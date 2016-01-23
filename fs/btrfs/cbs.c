@@ -21,7 +21,7 @@
 #include "transaction.h"
 #include "delayed-ref.h"
 #include "disk-io.h"
-#include "dedup.h" // review 
+//#include "dedup.h" // review 
 #include <linux/vmalloc.h>
 
 static int init_cbs_info(struct btrfs_fs_info *fs_info, u16 type)
@@ -190,8 +190,7 @@ out:
 	return ret;
 }
 
-static int ondisk_search_hash(struct btrfs_cbs_info *cbs_info, u8 *hash,
-			      u64 *bytenr_ret, u32 *num_bytes_ret);
+static int ondisk_search_hash(struct btrfs_cbs_info *cbs_info, u8 *hash);
 
 int btrfs_cbs_cleanup(struct btrfs_fs_info *fs_info)
 {
@@ -233,20 +232,24 @@ static int ondisk_add(struct btrfs_trans_handle *trans,
 
 	mutex_lock(&cbs_info->lock);
 
-	ret = ondisk_search_bytenr(NULL, cbs_info, path, hash->bytenr, 0);
+	/*ret = ondisk_search_bytenr(NULL, cbs_info, path, hash->bytenr, 0);
 	if (ret < 0)
 		goto out;
 	if (ret > 0) {
 		ret = 0;
 		goto out;
 	}
-	btrfs_release_path(path);
+	btrfs_release_path(path);*/
 
-	ret = ondisk_search_hash(cbs_info, hash->hash, &bytenr, &num_bytes);
-	if (ret < 0)
+	ret = ondisk_search_hash(cbs_info, hash->hash);
+	printk(KERN_INFO " ##### In %s ##### \n", __func__);
+	if (ret < 0) {
+		printk(KERN_INFO " ##### In %s : ERROR in searching hash on-disk ##### \n", __func__);
 		goto out;
+	}
 	/* Same hash found, don't re-add to save cbs tree space */
 	if (ret > 0) {
+		printk(KERN_INFO " ##### In %s : Hash found on-disk ##### \n", __func__);
 		ret = 0;
 		goto out;
 	}
@@ -254,7 +257,7 @@ static int ondisk_add(struct btrfs_trans_handle *trans,
 	/* Insert hash->bytenr item */
 	memcpy(&key.objectid, hash->hash + hash_len - 8, 8);
 	key.type = BTRFS_CBS_HASH_ITEM_KEY;
-	key.offset = hash->bytenr;
+	key.offset = 0;
 
 	ret = btrfs_insert_empty_item(trans, cbs_root, path, &key,
 			sizeof(*hash_item) + hash_len);
@@ -267,9 +270,9 @@ static int ondisk_add(struct btrfs_trans_handle *trans,
 	write_extent_buffer(path->nodes[0], hash->hash,
 			    (unsigned long)(hash_item + 1), hash_len);
 	btrfs_mark_buffer_dirty(path->nodes[0]);
-	btrfs_release_path(path);
-
-	/* Then bytenr->hash item */
+	//btrfs_release_path(path);
+/*
+	/* Then bytenr->hash item 
 	key.objectid = hash->bytenr;
 	key.type = BTRFS_CBS_BYTENR_ITEM_KEY;
 	memcpy(&key.offset, hash->hash + hash_len - 8, 8);
@@ -278,11 +281,11 @@ static int ondisk_add(struct btrfs_trans_handle *trans,
 	WARN_ON(ret == -EEXIST);
 	if (ret < 0)
 		goto out;
-	write_extent_buffer(path->nodes[0], hash->hash,
+	write_extent_buffer(pathath->nodes[0], hash->hash,
 			btrfs_item_ptr_offset(path->nodes[0], path->slots[0]),
 			hash_len);
 	btrfs_mark_buffer_dirty(path->nodes[0]);
-
+*/
 out:
 	mutex_unlock(&cbs_info->lock);
 	btrfs_free_path(path);
@@ -300,8 +303,8 @@ int btrfs_cbs_add(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 	if (!cbs_info || !hash)
 		return 0;
 
-	if (WARN_ON(hash->bytenr == 0))
-		return -EINVAL;
+	//if (WARN_ON(hash->bytenr == 0))
+	//	return -EINVAL;
 
 	return ondisk_add(trans, cbs_info, hash);
 }
@@ -435,8 +438,7 @@ int btrfs_cbs_disable(struct btrfs_fs_info *fs_info)
  * Return >0 for found and set bytenr_ret
  * Return <0 for error
  */
-static int ondisk_search_hash(struct btrfs_cbs_info *cbs_info, u8 *hash,
-			      u64 *bytenr_ret, u32 *num_bytes_ret)
+static int ondisk_search_hash(struct btrfs_cbs_info *cbs_info, u8 *hash)
 {
 	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 
@@ -461,12 +463,12 @@ static int ondisk_search_hash(struct btrfs_cbs_info *cbs_info, u8 *hash,
 	memcpy(&hash_key, hash + hash_len - 8, 8);
 	key.objectid = hash_key;
 	key.type = BTRFS_CBS_HASH_ITEM_KEY;
-	key.offset = (u64)-1;
+	key.offset = (u64)-1;	// doubtful
 
 	ret = btrfs_search_slot(NULL, cbs_root, &key, path, 0, 0);
 	if (ret < 0)
 		goto out;
-	WARN_ON(ret == 0);
+	//WARN_ON(ret == 0);
 	while (1) {
 		struct extent_buffer *node;
 		struct btrfs_cbs_hash_item *hash_item;
@@ -494,31 +496,19 @@ static int ondisk_search_hash(struct btrfs_cbs_info *cbs_info, u8 *hash,
 				   hash_len);
 		if (!memcmp(buf, hash, hash_len)) {
 			ret = 1;
-			*bytenr_ret = key.offset;
-			*num_bytes_ret = btrfs_cbs_hash_len(node, hash_item);
 			break;
 		}
 	}
 out:
 	kfree(buf);
 	btrfs_free_path(path);
+
+	printk(KERN_ERR " ##### In %s: ret = %d ##### \n", __func__, ret);
 	return ret;
 }
 
-/* Wrapper for different backends, caller needs to hold cbs_info->lock */
-static inline int generic_search_hash(struct btrfs_cbs_info *cbs_info,
-				      u8 *hash, u64 *bytenr_ret,
-				      u32 *num_bytes_ret)
-{
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
-
-	return ondisk_search_hash(cbs_info, hash, bytenr_ret,
-					  num_bytes_ret);
-	return -EINVAL;
-}
-
-static int generic_search(struct inode *inode, u64 file_pos,
-			struct btrfs_cbs_hash *hash)
+/* review */
+static int generic_search(struct inode *inode, struct btrfs_cbs_hash *hash)
 {
 	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 
@@ -526,92 +516,31 @@ static int generic_search(struct inode *inode, u64 file_pos,
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	struct btrfs_fs_info *fs_info = root->fs_info;
 	struct btrfs_trans_handle *trans;
-	struct btrfs_delayed_ref_root *delayed_refs;
-	struct btrfs_delayed_ref_head *head;
 	struct btrfs_cbs_info *cbs_info = fs_info->cbs_info;
 	u64 bytenr;
-	u64 tmp_bytenr;
 	u32 num_bytes;
 
 	trans = btrfs_join_transaction(root);
 	if (IS_ERR(trans))
 		return PTR_ERR(trans);
 
-again:
 	mutex_lock(&cbs_info->lock);
-	ret = generic_search_hash(cbs_info, hash->hash, &bytenr, &num_bytes);
+	ret = ondisk_search_hash(cbs_info, hash->hash);
 	if (ret <= 0)
 		goto out;
-
-	delayed_refs = &trans->transaction->delayed_refs;
-
-	spin_lock(&delayed_refs->lock);
-	head = btrfs_find_delayed_ref_head(trans, bytenr);
-	if (!head) {
-		/*
-		 * We can safely insert a new delayed_ref as long as we
-		 * hold delayed_refs->lock.
-		 * Only need to use atomic inc_extent_ref()
-		 */
-		ret = btrfs_inc_extent_ref_atomic(trans, root, bytenr,
-				num_bytes, 0, root->root_key.objectid,
-				btrfs_ino(inode), file_pos);
-		spin_unlock(&delayed_refs->lock);
-
-		if (ret == 0) {
-			hash->bytenr = bytenr;
-			hash->num_bytes = num_bytes;
-			ret = 1;
-		}
-		goto out;
-	}
-
 	/*
 	 * We can't lock ref head with cbs_info->lock hold or we will cause
 	 * ABBA dead lock.
 	 */
-	mutex_unlock(&cbs_info->lock);
-	ret = btrfs_delayed_ref_lock(trans, head);
-	spin_unlock(&delayed_refs->lock);
-	if (ret == -EAGAIN)
-		goto again;
-
-	mutex_lock(&cbs_info->lock);
-	/*
-	 * Search again to ensure the hash is still here and bytenr didn't
-	 * change
-	 */
-	ret = generic_search_hash(cbs_info, hash->hash, &tmp_bytenr,
-				  &num_bytes);
-	if (ret <= 0) {
-		mutex_unlock(&head->mutex);
-		goto out;
-	}
-	if (tmp_bytenr != bytenr) {
-		mutex_unlock(&head->mutex);
-		mutex_unlock(&cbs_info->lock);
-		goto again;
-	}
-	hash->bytenr = bytenr;
-	hash->num_bytes = num_bytes;
-
-	/*
-	 * Increase the extent ref right now, to avoid delayed ref run
-	 * Or we may increase ref on non-exist extent.
-	 */
-	btrfs_inc_extent_ref(trans, root, bytenr, num_bytes, 0,
-			     root->root_key.objectid,
-			     btrfs_ino(inode), file_pos);
-	mutex_unlock(&head->mutex);
 out:
 	mutex_unlock(&cbs_info->lock);
 	btrfs_end_transaction(trans, root);
 
+	printk(KERN_ERR " ##### In %s: ret = %d ##### \n", __func__, ret);
 	return ret;
 }
 
-int btrfs_cbs_search(struct inode *inode, u64 file_pos,
-		       struct btrfs_cbs_hash *hash)
+int btrfs_cbs_search(struct inode *inode, struct btrfs_cbs_hash *hash)
 {
 	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 
@@ -622,21 +551,22 @@ int btrfs_cbs_search(struct inode *inode, u64 file_pos,
 	if (WARN_ON(!cbs_info || !hash))
 		return 0;
 
-	ret = generic_search(inode, file_pos, hash);
+	ret = generic_search(inode, hash);
 	if (ret == 0) {
 		hash->num_bytes = 0;			
 		hash->bytenr = 0;
 	}
+	printk(KERN_ERR " ##### In %s : ret = %d ##### \n", __func__, ret);
+
 	return ret;
+}
 
-	}
-
-static int hash_data(struct btrfs_dedup_info *cbs_info, const char *data, // review 
-		     u64 length, struct btrfs_dedup_hash *hash)
+static int hash_data(struct btrfs_cbs_info *cbs_info, const char *data, // review 
+		     u64 length, struct btrfs_cbs_hash *hash)
 {
 	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 	
-	struct crypto_shash *tfm = cbs_info->dedup_driver; // review 
+	struct crypto_shash *tfm = cbs_info->cbs_driver; // review 
 	struct {
 		struct shash_desc desc;
 		char ctx[crypto_shash_descsize(tfm)];
@@ -654,12 +584,12 @@ static int hash_data(struct btrfs_dedup_info *cbs_info, const char *data, // rev
 }
 
 int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
-			  u64 start, u64 end, struct btrfs_dedup_hash *hash)
+			  u64 start, u64 end, struct btrfs_cbs_hash *hash)
 {
 	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 
 	struct page *p;
-	struct btrfs_dedup_info *cbs_info = root->fs_info->dedup_info; // review 
+	struct btrfs_cbs_info *cbs_info = root->fs_info->cbs_info; // review 
 	char *data;
 	int i;
 	int ret;
