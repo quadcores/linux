@@ -51,6 +51,7 @@
 #include "sysfs.h"
 #include "qgroup.h"
 #include "dedup.h"
+#include "cbs.h"
 
 #ifdef CONFIG_X86
 #include <asm/cpufeature.h>
@@ -178,6 +179,7 @@ static struct btrfs_lockdep_keyset {
 	{ .id = BTRFS_DATA_RELOC_TREE_OBJECTID,	.name_stem = "dreloc"	},
 	{ .id = BTRFS_UUID_TREE_OBJECTID,	.name_stem = "uuid"	},
 	{ .id = BTRFS_DEDUP_TREE_OBJECTID,	.name_stem = "dedup"	},
+	{ .id = BTRFS_CBS_TREE_OBJECTID,	.name_stem = "cbs"	},
 	{ .id = 0,				.name_stem = "tree"	},
 };
 
@@ -2482,6 +2484,26 @@ static int btrfs_read_roots(struct btrfs_fs_info *fs_info,
 		free_root_extent_buffers(root);
 		kfree(root);
 	}
+
+	location.objectid = BTRFS_CBS_TREE_OBJECTID;
+	root = btrfs_read_tree_root(tree_root, &location);
+	if (IS_ERR(root)) {
+		ret = PTR_ERR(root);
+		if (ret != -ENOENT)
+			return ret;
+		/* Just OK if there is no cbs root */
+		return 0;
+	}
+
+	set_bit(BTRFS_ROOT_TRACK_DIRTY, &root->state);
+	/* Found cbs root, resume previous cbs setup */
+	ret = btrfs_cbs_resume(fs_info, root);
+
+	if (ret < 0) {
+		free_root_extent_buffers(root);
+		kfree(root);
+	}
+
 	return ret;
 }
 
@@ -2577,6 +2599,7 @@ int open_ctree(struct super_block *sb,
 	mutex_init(&fs_info->reloc_mutex);
 	mutex_init(&fs_info->delalloc_root_mutex);
 	mutex_init(&fs_info->dedup_ioctl_mutex);
+	mutex_init(&fs_info->cbs_ioctl_mutex);
 	seqlock_init(&fs_info->profiles_lock);
 	init_rwsem(&fs_info->delayed_iput_sem);
 
@@ -3890,6 +3913,10 @@ void close_ctree(struct btrfs_root *root)
 
 	/* Cleanup dedup info */
 	btrfs_dedup_cleanup(fs_info);
+
+
+	/* Cleanup cbs info */
+	btrfs_cbs_cleanup(fs_info);
 
 	if (percpu_counter_sum(&fs_info->delalloc_bytes)) {
 		btrfs_info(fs_info, "at unmount delalloc count %lld",

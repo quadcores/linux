@@ -20,6 +20,7 @@
 #include "disk-io.h"
 #include "hash.h"
 #include "transaction.h"
+#include "cbs.h" 
 
 /*
  * insert a name into a directory, doing overflow properly if there is a hash
@@ -184,33 +185,118 @@ out_free:
 }
 
 /*
+ * helper function to look at the directory item pointed to by 'path'
+ * this walks through all the entries in a dir item and finds one
+ * for a specific name.
+ */
+static struct btrfs_dir_item *__btrfs_match_dir_item_name(struct btrfs_root *root,
+						 struct btrfs_path *path,
+						 const char *name, int name_len, unsigned long inode_no)
+{
+	printk(KERN_INFO " ##### In %s ##### \n", __func__);
+
+	struct btrfs_dir_item *dir_item;
+	unsigned long name_ptr;
+	struct btrfs_disk_key disk_key;
+	u32 total_len;
+	u32 cur = 0;
+	u32 this_len;
+	struct extent_buffer *leaf;	
+
+	leaf = path->nodes[0];
+	dir_item = btrfs_item_ptr(leaf, path->slots[0], struct btrfs_dir_item);
+	if (verify_dir_item(root, leaf, dir_item))
+		return NULL;
+
+	total_len = btrfs_item_size_nr(leaf, path->slots[0]);
+	while (cur < total_len) {
+		this_len = sizeof(*dir_item) +
+		btrfs_dir_name_len(leaf, dir_item) +
+		btrfs_dir_data_len(leaf, dir_item);
+		if(inode_no == 0)
+		{
+			printk(KERN_INFO " ##### In %s : inode_no = 0. Inside if. ##### \n", __func__);
+	
+			name_ptr = (unsigned long)(dir_item + 1);
+
+			if (btrfs_dir_name_len(leaf, dir_item) == name_len &&
+			    memcmp_extent_buffer(leaf, name, name_ptr, name_len) == 0)
+				return dir_item;
+		}
+		else
+		{
+			printk(KERN_INFO " ##### In %s : inode_no = %lu. Inside else. ##### \n", __func__, inode_no);
+
+			btrfs_dir_item_key(leaf, dir_item, &disk_key);
+			printk(KERN_INFO " ##### In %s : disk_key.objectid = %llu. inode_no = %lu ##### \n",
+													 __func__, disk_key.objectid, inode_no);
+			if (disk_key.objectid == inode_no) {
+				printk(KERN_INFO " ##### In %s : disk_key.objectid == inode_no ##### \n", __func__);
+				return dir_item;
+			}
+		}
+		cur += this_len;
+		dir_item = (struct btrfs_dir_item *)((char *)dir_item +
+						     this_len);
+	}
+	return NULL;
+}
+
+/* cbs
  * lookup a directory item based on name.  'dir' is the objectid
  * we're searching in, and 'mod' tells us if you plan on deleting the
  * item (use mod < 0) or changing the options (use mod > 0)
  */
+static struct btrfs_dir_item *__btrfs_lookup_dir_item(struct btrfs_trans_handle *trans,
+					     struct btrfs_root *root,
+					     struct btrfs_path *path, u64 dir,
+					     const char *name, int name_len,
+					     int mod, unsigned long inode_no)
+{
+
+	int ret;
+	struct btrfs_key key;
+	int ins_len = mod < 0 ? -1 : 0;
+	int cow = mod != 0;
+
+	printk(KERN_ERR " ##### In %s : dir = %llu. inode_no = %lu. ##### \n", __func__, dir, inode_no);
+
+	key.objectid = dir;
+	key.type = BTRFS_DIR_ITEM_KEY;
+	key.offset = btrfs_name_hash(name, name_len);
+
+	ret = btrfs_search_slot(trans, root, &key, path, ins_len, cow);
+	printk(KERN_ERR " ##### In %s : ret = %d ##### \n", __func__, ret);
+
+	if (ret < 0)
+		return ERR_PTR(ret);
+	if (ret > 0)
+		return NULL;
+
+	if(inode_no == 0) {
+		return btrfs_match_dir_item_name(root, path, name, name_len);
+	}
+	else {
+		return __btrfs_match_dir_item_name(root, path, name, name_len, inode_no);
+	}
+}
+
+struct btrfs_dir_item *btrfs_lookup_dir_item_cbs(struct btrfs_trans_handle *trans,
+					     struct btrfs_root *root,
+					     struct btrfs_path *path, u64 dir,
+					     const char *name, int name_len,
+					     int mod, unsigned long inode_no)
+{
+	return __btrfs_lookup_dir_item(trans, root, path, dir, name, name_len, mod, inode_no);
+}					
+
 struct btrfs_dir_item *btrfs_lookup_dir_item(struct btrfs_trans_handle *trans,
 					     struct btrfs_root *root,
 					     struct btrfs_path *path, u64 dir,
 					     const char *name, int name_len,
 					     int mod)
 {
-	int ret;
-	struct btrfs_key key;
-	int ins_len = mod < 0 ? -1 : 0;
-	int cow = mod != 0;
-
-	key.objectid = dir;
-	key.type = BTRFS_DIR_ITEM_KEY;
-
-	key.offset = btrfs_name_hash(name, name_len);
-
-	ret = btrfs_search_slot(trans, root, &key, path, ins_len, cow);
-	if (ret < 0)
-		return ERR_PTR(ret);
-	if (ret > 0)
-		return NULL;
-
-	return btrfs_match_dir_item_name(root, path, name, name_len);
+	return __btrfs_lookup_dir_item(trans, root, path, dir, name, name_len, mod, 0);
 }
 
 int btrfs_check_dir_item_collision(struct btrfs_root *root, u64 dir,
@@ -374,43 +460,11 @@ struct btrfs_dir_item *btrfs_lookup_xattr(struct btrfs_trans_handle *trans,
 	return btrfs_match_dir_item_name(root, path, name, name_len);
 }
 
-/*
- * helper function to look at the directory item pointed to by 'path'
- * this walks through all the entries in a dir item and finds one
- * for a specific name.
- */
 struct btrfs_dir_item *btrfs_match_dir_item_name(struct btrfs_root *root,
 						 struct btrfs_path *path,
 						 const char *name, int name_len)
 {
-	struct btrfs_dir_item *dir_item;
-	unsigned long name_ptr;
-	u32 total_len;
-	u32 cur = 0;
-	u32 this_len;
-	struct extent_buffer *leaf;
-
-	leaf = path->nodes[0];
-	dir_item = btrfs_item_ptr(leaf, path->slots[0], struct btrfs_dir_item);
-	if (verify_dir_item(root, leaf, dir_item))
-		return NULL;
-
-	total_len = btrfs_item_size_nr(leaf, path->slots[0]);
-	while (cur < total_len) {
-		this_len = sizeof(*dir_item) +
-			btrfs_dir_name_len(leaf, dir_item) +
-			btrfs_dir_data_len(leaf, dir_item);
-		name_ptr = (unsigned long)(dir_item + 1);
-
-		if (btrfs_dir_name_len(leaf, dir_item) == name_len &&
-		    memcmp_extent_buffer(leaf, name, name_ptr, name_len) == 0)
-			return dir_item;
-
-		cur += this_len;
-		dir_item = (struct btrfs_dir_item *)((char *)dir_item +
-						     this_len);
-	}
-	return NULL;
+	return __btrfs_match_dir_item_name(root, path, name, name_len, 0);
 }
 
 /*
