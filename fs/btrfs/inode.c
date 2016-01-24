@@ -820,13 +820,15 @@ run_delalloc_cbs(struct inode *inode, struct page *locked_page, u64 start,
 		printk(KERN_INFO "______#### CBS_CALC_HASH successful #####_______ \n");
 	}
 
-	found = btrfs_cbs_search(inode, hash);
-
-	if (found == 0) {
+	found = btrfs_cbs_search(inode, hash->hash);
+	if (found == 0)
+		goto out;
+	if (found == 1) {
 		/* Cbs hash miss, normal routine */
 		printk(KERN_INFO " #### In %s : Hash miss. ####\n", __func__);
 		hash->bytenr = 0;
 		hash->num_bytes = i_size_read(inode);
+		hash->inode_no = inode->i_ino;
 
 		if (nolock)
 			trans = btrfs_join_transaction_nolock(root);
@@ -5837,13 +5839,24 @@ static int btrfs_inode_by_name(struct inode *dir, struct dentry *dentry,
 	struct btrfs_path *path;
 	struct btrfs_root *root = BTRFS_I(dir)->root;
 	int ret = 0;
+	unsigned long inode_no = 0;
+	
+	//printk(KERN_ERR " ##### In %s : calling prepare_hash. name = %s. name_len = %d ##### \n", __func__, name, namelen);
 
 	path = btrfs_alloc_path();
 	if (!path)
 		return -ENOMEM;
 
-	di = btrfs_lookup_dir_item(NULL, root, path, btrfs_ino(dir), name,
-				    namelen, 0);
+	if(root->fs_info->cbs_info && namelen > 60){
+		inode_no = prepare_hash(dir, name);
+		printk(KERN_ERR "##### In %s : Calling btrfs_lookup_dir_item_cbs #####\n", __func__);
+		di = btrfs_lookup_dir_item_cbs(NULL, root, path, btrfs_ino(dir), name,
+					    namelen, 0, inode_no);
+	}
+	else
+		di = btrfs_lookup_dir_item(NULL, root, path, btrfs_ino(dir), name,
+					    namelen, 0);
+
 	if (IS_ERR(di))
 		ret = PTR_ERR(di);
 

@@ -40,7 +40,7 @@ static int btrfs_cbs_sizes[] = { 32 };
 struct btrfs_cbs_hash {
 	u64 bytenr;
 	u32 num_bytes;
-
+	u64 inode_no;
 	/* last field is a variable length array of cbs hash */
 	u8 hash[];
 };
@@ -103,6 +103,13 @@ int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
 			  u64 start, u64 end, struct btrfs_cbs_hash *hash);
 
 /*
+ * Converts the 64 byte name recieved from userspace to 32 byte hash.
+ * Later, calls ondisk_search_hash to fetch inode_no from hash vs inode cbs tree.
+ */
+
+unsigned long prepare_hash(struct inode *dir, const char* name);
+
+/*
  * Search for duplicated extents by calculated hash
  * Caller must call btrfs_cbs_calc_hash() first to get the hash.
  *
@@ -119,7 +126,7 @@ int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
  *
  * Only on-disk backedn may return error though.
  */
-int btrfs_cbs_search(struct inode *inode, struct btrfs_cbs_hash *hash);
+unsigned long btrfs_cbs_search(struct inode *inode, u8 *hash);
 
 /* Add a cbs hash into cbs info */
 int btrfs_cbs_add(struct btrfs_trans_handle *trans, struct btrfs_root *root,

@@ -1595,6 +1595,18 @@ static int comp_keys(struct btrfs_disk_key *disk, struct btrfs_key *k2)
 }
 
 /*
+ * compare two keys in a memcmp fashion for cbs (don't compare offset)
+ */
+static int comp_keys_cbs(struct btrfs_disk_key *disk, struct btrfs_key *k2)
+{
+	struct btrfs_key k1;
+
+	btrfs_disk_key_to_cpu(&k1, disk);
+
+	return btrfs_comp_cpu_keys_cbs(&k1, k2);
+}
+
+/*
  * same as comp_keys only with two btrfs_key's
  */
 int btrfs_comp_cpu_keys(struct btrfs_key *k1, struct btrfs_key *k2)
@@ -1611,6 +1623,24 @@ int btrfs_comp_cpu_keys(struct btrfs_key *k1, struct btrfs_key *k2)
 		return 1;
 	if (k1->offset < k2->offset)
 		return -1;
+	return 0;
+}
+
+/*
+ * same as comp_keys only with two btrfs_key's (don't compare offset)
+ */
+
+int btrfs_comp_cpu_keys_cbs(struct btrfs_key *k1, struct btrfs_key *k2)
+{
+	if (k1->objectid > k2->objectid)
+		return 1;
+	if (k1->objectid < k2->objectid)
+		return -1;
+	if (k1->type > k2->type)
+		return 1;
+	if (k1->type < k2->type)
+		return -1;
+
 	return 0;
 }
 
@@ -1807,6 +1837,73 @@ static noinline int generic_bin_search(struct extent_buffer *eb,
 	return 1;
 }
 
+/* cbs
+ * search for key in the extent_buffer.  The items start at offset p,
+ * and they are item_size apart.  There are 'max' items in p.
+ *
+ * the slot in the array is returned via slot, and it points to
+ * the place where you would insert key if it is not found in
+ * the array.
+ *
+ * slot may point to max if the key is bigger than all of the keys
+ */
+static noinline int generic_bin_search_cbs(struct extent_buffer *eb,
+				       unsigned long p,
+				       int item_size, struct btrfs_key *key,
+				       int max, int *slot)
+{
+	int low = 0;
+	int high = max;
+	int mid;
+	int ret;
+	struct btrfs_disk_key *tmp = NULL;
+	struct btrfs_disk_key unaligned;
+	unsigned long offset;
+	char *kaddr = NULL;
+	unsigned long map_start = 0;
+	unsigned long map_len = 0;
+	int err;
+
+	while (low < high) {
+		mid = (low + high) / 2;
+		offset = p + mid * item_size;
+
+		if (!kaddr || offset < map_start ||
+		    (offset + sizeof(struct btrfs_disk_key)) >
+		    map_start + map_len) {
+
+			err = map_private_extent_buffer(eb, offset,
+						sizeof(struct btrfs_disk_key),
+						&kaddr, &map_start, &map_len);
+
+			if (!err) {
+				tmp = (struct btrfs_disk_key *)(kaddr + offset -
+							map_start);
+			} else {
+				read_extent_buffer(eb, &unaligned,
+						   offset, sizeof(unaligned));
+				tmp = &unaligned;
+			}
+
+		} else {
+			tmp = (struct btrfs_disk_key *)(kaddr + offset -
+							map_start);
+		}
+		ret = comp_keys_cbs(tmp, key);
+
+		if (ret < 0)
+			low = mid + 1;
+		else if (ret > 0)
+			high = mid;
+		else {
+			*slot = mid;
+			return 0;
+		}
+	}
+	*slot = low;
+	return 1;
+}
+
 /*
  * simple bin_search frontend that does the right thing for
  * leaves vs nodes
@@ -1822,6 +1919,27 @@ static int bin_search(struct extent_buffer *eb, struct btrfs_key *key,
 					  slot);
 	else
 		return generic_bin_search(eb,
+					  offsetof(struct btrfs_node, ptrs),
+					  sizeof(struct btrfs_key_ptr),
+					  key, btrfs_header_nritems(eb),
+					  slot);
+}
+
+/* cbs
+ * simple bin_search frontend that does the right thing for
+ * leaves vs nodes
+ */
+static int bin_search_cbs(struct extent_buffer *eb, struct btrfs_key *key,
+		      int level, int *slot)
+{
+	if (level == 0)
+		return generic_bin_search_cbs(eb,
+					  offsetof(struct btrfs_leaf, items),
+					  sizeof(struct btrfs_item),
+					  key, btrfs_header_nritems(eb),
+					  slot);
+	else
+		return generic_bin_search_cbs(eb,
 					  offsetof(struct btrfs_node, ptrs),
 					  sizeof(struct btrfs_key_ptr),
 					  key, btrfs_header_nritems(eb),
@@ -2618,6 +2736,19 @@ static int key_search(struct extent_buffer *b, struct btrfs_key *key,
 	return 0;
 }
 
+static int key_search_cbs(struct extent_buffer *b, struct btrfs_key *key,
+		      int level, int *prev_cmp, int *slot)
+{
+	if (*prev_cmp != 0) {
+		*prev_cmp = bin_search_cbs(b, key, level, slot);
+		return *prev_cmp;
+	}
+
+	*slot = 0;
+
+	return 0;
+}
+
 int btrfs_find_item(struct btrfs_root *fs_root, struct btrfs_path *path,
 		u64 iobjectid, u64 ioff, u8 key_type,
 		struct btrfs_key *found_key)
@@ -2682,6 +2813,7 @@ int btrfs_search_slot(struct btrfs_trans_handle *trans, struct btrfs_root
 	u8 lowest_level = 0;
 	int min_write_lock_level;
 	int prev_cmp;
+	struct btrfs_fs_info *fs_info = root->fs_info;
 
 	lowest_level = p->lowest_level;
 	WARN_ON(lowest_level && ins_len > 0);
@@ -2821,7 +2953,10 @@ cow_done:
 			}
 		}
 
-		ret = key_search(b, key, level, &prev_cmp, &slot);
+		if(fs_info->cbs_info && key->type == BTRFS_DIR_ITEM_KEY)
+			ret = key_search_cbs(b, key, level, &prev_cmp, &slot);
+		else
+			ret = key_search(b, key, level, &prev_cmp, &slot);
 
 		if (level != 0) {
 			int dec = 0;

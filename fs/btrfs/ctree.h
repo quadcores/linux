@@ -1027,6 +1027,9 @@ struct btrfs_cbs_hash_item {
 	/* on disk length of cbs range */
 	__le64 len;
 
+	/* inode number of the file that has its hash linked here */
+	u64 inode_no;
+
 	/* Spare space */
 	u8 __unused[16];
 
@@ -3346,6 +3349,7 @@ BTRFS_SETGET_FUNCS(dedup_hash_len, struct btrfs_dedup_hash_item, len, 64);
 
 /* btrfs_cbs_hash_item */
 BTRFS_SETGET_FUNCS(cbs_hash_len, struct btrfs_cbs_hash_item, len, 64);
+BTRFS_SETGET_FUNCS(cbs_inode_no, struct btrfs_cbs_hash_item, inode_no, 64);
 
 /* struct btrfs_file_extent_item */
 BTRFS_SETGET_FUNCS(file_extent_type, struct btrfs_file_extent_item, type, 8);
@@ -3778,6 +3782,7 @@ u64 add_new_free_space(struct btrfs_block_group_cache *block_group,
 int btrfs_bin_search(struct extent_buffer *eb, struct btrfs_key *key,
 		     int level, int *slot);
 int btrfs_comp_cpu_keys(struct btrfs_key *k1, struct btrfs_key *k2);
+int btrfs_comp_cpu_keys_cbs(struct btrfs_key *k1, struct btrfs_key *k2);
 int btrfs_previous_item(struct btrfs_root *root,
 			struct btrfs_path *path, u64 min_objectid,
 			int type);
@@ -4001,6 +4006,11 @@ int btrfs_insert_dir_item(struct btrfs_trans_handle *trans,
 			  struct btrfs_root *root, const char *name,
 			  int name_len, struct inode *dir,
 			  struct btrfs_key *location, u8 type, u64 index);
+struct btrfs_dir_item *btrfs_lookup_dir_item_cbs(struct btrfs_trans_handle *trans,
+					     struct btrfs_root *root,
+					     struct btrfs_path *path, u64 dir,
+					     const char *name, int name_len,
+					     int mod, unsigned long inode_no);
 struct btrfs_dir_item *btrfs_lookup_dir_item(struct btrfs_trans_handle *trans,
 					     struct btrfs_root *root,
 					     struct btrfs_path *path, u64 dir,
