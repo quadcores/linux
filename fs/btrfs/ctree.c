@@ -4940,6 +4940,8 @@ int btrfs_insert_empty_items(struct btrfs_trans_handle *trans,
 			    struct btrfs_key *cpu_key, u32 *data_size,
 			    int nr)
 {
+	printk(KERN_INFO " ##### In %s ##### \n", __func__);
+
 	int ret = 0;
 	int slot;
 	int i;
@@ -4950,7 +4952,12 @@ int btrfs_insert_empty_items(struct btrfs_trans_handle *trans,
 		total_data += data_size[i];
 
 	total_size = total_data + (nr * sizeof(struct btrfs_item));
+
+	printk(KERN_INFO " ##### In %s : Calling btrfs_search_slot ##### \n", __func__);
+
 	ret = btrfs_search_slot(trans, root, cpu_key, path, total_size, 1);
+	printk(KERN_INFO " ##### In %s : btrfs_search_slot returns %d. ##### \n", __func__, ret);
+
 	if (ret == 0)
 		return -EEXIST;
 	if (ret < 0)
@@ -4958,6 +4965,7 @@ int btrfs_insert_empty_items(struct btrfs_trans_handle *trans,
 
 	slot = path->slots[0];
 	BUG_ON(slot < 0);
+	printk(KERN_INFO " ##### In %s : slot set successfully. Calling setup_items_for_insert ##### \n", __func__);
 
 	setup_items_for_insert(root, path, cpu_key, data_size,
 			       total_data, total_size, nr);

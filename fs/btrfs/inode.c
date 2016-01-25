@@ -4603,6 +4603,7 @@ static int __btrfs_unlink(struct inode *dir, struct dentry *dentry, struct inode
 	struct inode *inode;
 	struct btrfs_root *root = BTRFS_I(dir)->root;
 	struct btrfs_trans_handle *trans;
+
 	int ret;
 
 	if(!cbs_inode)
@@ -4616,6 +4617,7 @@ static int __btrfs_unlink(struct inode *dir, struct dentry *dentry, struct inode
 
 	btrfs_record_unlink_dir(trans, dir, inode, 0);
 
+	printk(KERN_ERR "##### In %s #####\n", __func__);
 	if(!cbs_inode)
 	{
 		printk(KERN_ERR "##### In %s : Not the CBS way. %s #####\n", __func__, dentry->d_name.name);
@@ -4629,6 +4631,7 @@ static int __btrfs_unlink(struct inode *dir, struct dentry *dentry, struct inode
 				 "fakename", 8);
 	}
 
+
 	if (ret)
 		goto out;
 
@@ -4639,6 +4642,8 @@ static int __btrfs_unlink(struct inode *dir, struct dentry *dentry, struct inode
 	}
 
 out:
+	if(dentry)
+		btrfs_cbs_del(trans, root, dentry->d_name.name);
 	btrfs_end_transaction(trans, root);
 	btrfs_btree_balance_dirty(root);
 	return ret;
@@ -6194,8 +6199,10 @@ static struct inode *new_simple_dir(struct super_block *s,
 	return inode;
 }
 
+/* review -> remove printks */
 struct inode *btrfs_lookup_dentry(struct inode *dir, struct dentry *dentry)
 {
+	printk (KERN_INFO "#### In %s ####\n", __func__);
 	struct inode *inode;
 	struct btrfs_root *root = BTRFS_I(dir)->root;
 	struct btrfs_root *sub_root = root;
@@ -6207,13 +6214,19 @@ struct inode *btrfs_lookup_dentry(struct inode *dir, struct dentry *dentry)
 		return ERR_PTR(-ENAMETOOLONG);
 
 	ret = btrfs_inode_by_name(dir, dentry, &location);
-	if (ret < 0)
-		return ERR_PTR(ret);
 
-	if (location.objectid == 0)
+	if (ret < 0){
+		printk (KERN_INFO "#### In %s : btrfs_inode_by_name ret < 0 ####\n", __func__);
+		return ERR_PTR(ret);
+	}
+
+	if (location.objectid == 0){
+		printk (KERN_INFO "#### In %s : location.objectid == 0 ret < 0 ####\n", __func__);
 		return ERR_PTR(-ENOENT);
+	}
 
 	if (location.type == BTRFS_INODE_ITEM_KEY) {
+		printk (KERN_INFO "#### In %s : location.type == BTRFS_INODE_ITEM_KEY ####\n", __func__);
 		inode = btrfs_iget(dir->i_sb, &location, root, NULL);
 		return inode;
 	}
@@ -6224,21 +6237,29 @@ struct inode *btrfs_lookup_dentry(struct inode *dir, struct dentry *dentry)
 	ret = fixup_tree_root_location(root, dir, dentry,
 				       &location, &sub_root);
 	if (ret < 0) {
-		if (ret != -ENOENT)
+		printk (KERN_INFO "#### In %s : fixup_tree_root_location (ret < 0) ####\n", __func__);
+		if (ret != -ENOENT){
+			printk (KERN_INFO "#### In %s : if (ret != -ENOENT) ####\n", __func__);
 			inode = ERR_PTR(ret);
-		else
+		}
+		else{
+			printk (KERN_INFO "#### In %s : else of if(ret != -ENOENT) ####\n", __func__);
 			inode = new_simple_dir(dir->i_sb, &location, sub_root);
+		}
 	} else {
+		printk (KERN_INFO "#### In %s : fixup_tree_root_location if(ret < 0) cha else ####\n", __func__);
 		inode = btrfs_iget(dir->i_sb, &location, sub_root, NULL);
 	}
 	srcu_read_unlock(&root->fs_info->subvol_srcu, index);
 
 	if (!IS_ERR(inode) && root != sub_root) {
+		printk (KERN_INFO "#### In %s : if (!IS_ERR(inode) && root != sub_root) ####\n", __func__);
 		down_read(&root->fs_info->cleanup_work_sem);
 		if (!(inode->i_sb->s_flags & MS_RDONLY))
 			ret = btrfs_orphan_cleanup(sub_root);
 		up_read(&root->fs_info->cleanup_work_sem);
 		if (ret) {
+			printk (KERN_INFO "#### In %s : if(ret) ####\n", __func__);
 			iput(inode);
 			inode = ERR_PTR(ret);
 		}

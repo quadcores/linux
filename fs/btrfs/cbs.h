@@ -134,5 +134,5 @@ int btrfs_cbs_add(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 
 /* Remove a cbs hash from cbs info */
 int btrfs_cbs_del(struct btrfs_trans_handle *trans, struct btrfs_root *root,
-		    u64 bytenr);
+		    u8 *hash);
 #endif
