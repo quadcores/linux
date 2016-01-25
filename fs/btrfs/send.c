@@ -1510,6 +1510,7 @@ static int gen_unique_name(struct send_ctx *sctx,
 			   u64 ino, u64 gen,
 			   struct fs_path *dest)
 {
+	printk (KERN_INFO "#### In %s ####\n", __func__);
 	int ret = 0;
 	struct btrfs_path *path;
 	struct btrfs_dir_item *di;
@@ -1671,6 +1672,7 @@ static int lookup_dir_item_inode(struct btrfs_root *root,
 				 u64 *found_inode,
 				 u8 *found_type)
 {
+	printk (KERN_INFO "#### In %s ####\n", __func__);
 	int ret = 0;
 	struct btrfs_dir_item *di;
 	struct btrfs_key key;

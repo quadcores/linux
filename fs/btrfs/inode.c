@@ -116,6 +116,7 @@ static struct extent_map *create_pinned_em(struct inode *inode, u64 start,
 					   int type);
 
 static int btrfs_dirty_inode(struct inode *inode);
+static int __btrfs_unlink(struct inode *dir, struct dentry *dentry, struct inode *cbs_inode);
 
 #ifdef CONFIG_BTRFS_FS_RUN_SANITY_TESTS
 void btrfs_test_inode_set_ops(struct inode *inode)
@@ -774,9 +775,11 @@ run_delalloc_cbs(struct inode *inode, struct page *locked_page, u64 start,
 {
 	printk(KERN_INFO " #### In %s ####\n", __func__);
 	int ret = 0;
+	struct dentry *temp_dentry = NULL;
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	struct btrfs_trans_handle *trans = NULL;
 	struct btrfs_root *cbs_root = root->fs_info->cbs_info->cbs_root;
+	struct inode *root_inode = root->fs_info->sb->s_root->d_inode;
 	u64 blocksize = root->sectorsize;
 	int found = 0;
 	
@@ -847,7 +850,10 @@ run_delalloc_cbs(struct inode *inode, struct page *locked_page, u64 start,
 		printk(KERN_INFO " #### In %s : Hash insertion successful! %d ####\n", __func__, ret);
 	} else {
 		/* decrement ref count */
-		printk(KERN_INFO " #### In %s : Hash hit. Skipping insertion for now. ####\n", __func__);
+		printk(KERN_INFO " #### In %s : Hash hit. Skipping insertion for now. Parent inode = %lu. ####\n",
+								 __func__, root_inode->i_ino);
+
+		__btrfs_unlink(root_inode, NULL, inode);
 	}
 
 	out:
@@ -4448,6 +4454,7 @@ static int __btrfs_unlink_inode(struct btrfs_trans_handle *trans,
 				struct inode *dir, struct inode *inode,
 				const char *name, int name_len)
 {
+	printk (KERN_INFO "#### In %s ####\n", __func__);
 	struct btrfs_path *path;
 	int ret = 0;
 	struct extent_buffer *leaf;
@@ -4464,8 +4471,19 @@ static int __btrfs_unlink_inode(struct btrfs_trans_handle *trans,
 	}
 
 	path->leave_spinning = 1;
-	di = btrfs_lookup_dir_item(trans, root, path, dir_ino,
-				    name, name_len, -1);
+	if(!root->fs_info->cbs_info)
+	{
+		printk(KERN_ERR "##### In %s : Not the CBS way #####\n", __func__);
+		di = btrfs_lookup_dir_item(trans, root, path, dir_ino,
+					    name, name_len, -1);
+	}
+	else
+	{
+		printk(KERN_ERR "##### In %s : Deleting the CBS way #####\n", __func__);
+		di = btrfs_lookup_dir_item_cbs(trans, root, path, dir_ino,
+					    name, name_len, -1, inode->i_ino);
+	}
+
 	if (IS_ERR(di)) {
 		ret = PTR_ERR(di);
 		goto err;
@@ -4578,21 +4596,39 @@ static struct btrfs_trans_handle *__unlink_start_trans(struct inode *dir)
 	return btrfs_start_transaction_fallback_global_rsv(root, 5, 5);
 }
 
-static int btrfs_unlink(struct inode *dir, struct dentry *dentry)
+static int __btrfs_unlink(struct inode *dir, struct dentry *dentry, struct inode *cbs_inode)
 {
+	if(cbs_inode)
+		printk(KERN_ERR "##### In %s : Deleting inode_no %lu from parent dir %lu. #####\n", __func__, cbs_inode->i_ino, dir->i_ino);
+	struct inode *inode;
 	struct btrfs_root *root = BTRFS_I(dir)->root;
 	struct btrfs_trans_handle *trans;
-	struct inode *inode = d_inode(dentry);
 	int ret;
+
+	if(!cbs_inode)
+		inode = d_inode(dentry);
+	else
+		inode = cbs_inode;
 
 	trans = __unlink_start_trans(dir);
 	if (IS_ERR(trans))
 		return PTR_ERR(trans);
 
-	btrfs_record_unlink_dir(trans, dir, d_inode(dentry), 0);
+	btrfs_record_unlink_dir(trans, dir, inode, 0);
 
-	ret = btrfs_unlink_inode(trans, root, dir, d_inode(dentry),
+	if(!cbs_inode)
+	{
+		printk(KERN_ERR "##### In %s : Not the CBS way. %s #####\n", __func__, dentry->d_name.name);
+		ret = btrfs_unlink_inode(trans, root, dir, inode,
 				 dentry->d_name.name, dentry->d_name.len);
+	}
+	else
+	{
+		printk(KERN_ERR "##### In %s : Deleting the CBS way #####\n", __func__);
+		ret = btrfs_unlink_inode(trans, root, dir, inode,
+				 "fakename", 8);
+	}
+
 	if (ret)
 		goto out;
 
@@ -4608,11 +4644,18 @@ out:
 	return ret;
 }
 
+static int btrfs_unlink(struct inode *dir, struct dentry *dentry)
+{
+	//printk(KERN_INFO "#### In %s : dentry name = %s ####\n",  dentry->d_name.name);
+	return __btrfs_unlink(dir, dentry, NULL);
+}
+
 int btrfs_unlink_subvol(struct btrfs_trans_handle *trans,
 			struct btrfs_root *root,
 			struct inode *dir, u64 objectid,
 			const char *name, int name_len)
 {
+	printk (KERN_INFO "#### In %s ####\n", __func__);
 	struct btrfs_path *path;
 	struct extent_buffer *leaf;
 	struct btrfs_dir_item *di;
@@ -5833,6 +5876,7 @@ no_delete:
 static int btrfs_inode_by_name(struct inode *dir, struct dentry *dentry,
 			       struct btrfs_key *location)
 {
+	printk (KERN_INFO "#### In %s ####\n", __func__);
 	const char *name = dentry->d_name.name;
 	int namelen = dentry->d_name.len;
 	struct btrfs_dir_item *di;

@@ -259,7 +259,7 @@ static struct btrfs_dir_item *__btrfs_lookup_dir_item(struct btrfs_trans_handle 
 	int ins_len = mod < 0 ? -1 : 0;
 	int cow = mod != 0;
 
-	printk(KERN_ERR " ##### In %s : dir = %llu. inode_no = %lu. ##### \n", __func__, dir, inode_no);
+	printk(KERN_ERR " ##### In %s : dir = %llu. inode_no = %lu. name = %s. ##### \n", __func__, dir, inode_no, name);
 
 	key.objectid = dir;
 	key.type = BTRFS_DIR_ITEM_KEY;
