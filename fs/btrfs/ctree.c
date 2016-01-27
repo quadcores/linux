@@ -2921,6 +2921,8 @@ again:
 			}
 
 			btrfs_set_path_blocking(p);
+			//printk(KERN_INFO "##### In btrfs_search_slot : Quad here. #####\n");
+
 			err = btrfs_cow_block(trans, root, b,
 					      p->nodes[level + 1],
 					      p->slots[level + 1], &b);
@@ -5080,6 +5082,9 @@ static noinline void btrfs_del_leaf(struct btrfs_trans_handle *trans,
 int btrfs_del_items(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 		    struct btrfs_path *path, int slot, int nr)
 {
+	printk(KERN_INFO " ##### In %s : slot = %d. nr = %d. ##### \n", __func__, slot, nr);
+	printk(KERN_INFO "#### In %s : Transaction id = %llu, %llu ####\n", __func__, trans->transid, root->fs_info->generation);
+
 	struct extent_buffer *leaf;
 	struct btrfs_item *item;
 	u32 last_off;
@@ -5177,14 +5182,20 @@ int btrfs_del_items(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 				 * push_leaf functions must have already
 				 * dirtied this buffer
 				 */
-				if (path->nodes[0] == leaf)
+
+				if (path->nodes[0] == leaf) {
+					printk(KERN_INFO " ##### In %s : Calling btrfs_mark_buffer_dirty from if ##### \n", __func__);
 					btrfs_mark_buffer_dirty(leaf);
+				}
 				free_extent_buffer(leaf);
 			}
 		} else {
+			printk(KERN_INFO " ##### In %s : Calling btrfs_mark_buffer_dirty from else ##### \n", __func__);
 			btrfs_mark_buffer_dirty(leaf);
 		}
 	}
+	printk(KERN_INFO "#### In %s : Before returning from here Transaction id = %llu, %llu ####\n", __func__, trans->transid, root->fs_info->generation);
+
 	return ret;
 }
 

@@ -260,6 +260,8 @@ static struct btrfs_dir_item *__btrfs_lookup_dir_item(struct btrfs_trans_handle 
 	int cow = mod != 0;
 
 	printk(KERN_ERR " ##### In %s : dir = %llu. inode_no = %lu. name = %s. ##### \n", __func__, dir, inode_no, name);
+	if(trans)
+		printk(KERN_INFO " ##### In %s : Calling btrfs_search_slot : Transaction id = %llu. --- ##### \n", __func__, trans->transid);
 
 	key.objectid = dir;
 	key.type = BTRFS_DIR_ITEM_KEY;
@@ -267,6 +269,8 @@ static struct btrfs_dir_item *__btrfs_lookup_dir_item(struct btrfs_trans_handle 
 
 	ret = btrfs_search_slot(trans, root, &key, path, ins_len, cow);
 	printk(KERN_ERR " ##### In %s : ret = %d ##### \n", __func__, ret);
+	if(trans)
+		printk(KERN_INFO " ##### In %s : After btrfs_search_slot : Transaction id = %llu. --- ##### \n", __func__, trans->transid);
 
 	if (ret < 0)
 		return ERR_PTR(ret);

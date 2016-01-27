@@ -845,8 +845,10 @@ run_delalloc_cbs(struct inode *inode, struct page *locked_page, u64 start,
 		}
 		trans->block_rsv = &root->fs_info->delalloc_block_rsv;
 
+		printk(KERN_INFO "#### In %s. Before btrfs_cbs_add : Transaction id = %llu. %llu. ####\n", __func__, trans->transid, root->fs_info->generation);
 		ret = btrfs_cbs_add(trans, cbs_root, hash);
-		
+		printk(KERN_INFO "#### In %s. After btrfs_cbs_add : Transaction id = %llu. %llu. ####\n", __func__, trans->transid, root->fs_info->generation);
+
 		printk(KERN_INFO " #### In %s : Hash insertion successful! %d ####\n", __func__, ret);
 	} else {
 		/* decrement ref count */
@@ -3546,7 +3548,6 @@ static int btrfs_writepage_end_io_hook(struct page *page, u64 start, u64 end,
 {
 	//printk(KERN_INFO " ##### In %s ##### \n", __func__);
 
-
 	struct inode *inode = page->mapping->host;
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	struct btrfs_ordered_extent *ordered_extent = NULL;
@@ -4473,12 +4474,14 @@ static int __btrfs_unlink_inode(struct btrfs_trans_handle *trans,
 	path->leave_spinning = 1;
 	if(!root->fs_info->cbs_info)
 	{
+		printk(KERN_INFO " ##### In %s : Calling btrfs_lookup_dir_item : Transaction id = %llu. --- ##### \n", __func__, trans->transid);
 		printk(KERN_ERR "##### In %s : Not the CBS way #####\n", __func__);
 		di = btrfs_lookup_dir_item(trans, root, path, dir_ino,
 					    name, name_len, -1);
 	}
 	else
 	{
+		printk(KERN_INFO " ##### In %s : Calling btrfs_lookup_dir_item_cbs : Transaction id = %llu. --- ##### \n", __func__, trans->transid);
 		printk(KERN_ERR "##### In %s : Deleting the CBS way #####\n", __func__);
 		di = btrfs_lookup_dir_item_cbs(trans, root, path, dir_ino,
 					    name, name_len, -1, inode->i_ino);
@@ -4566,11 +4569,14 @@ int btrfs_unlink_inode(struct btrfs_trans_handle *trans,
 		       const char *name, int name_len)
 {
 	int ret;
+	printk(KERN_INFO " ##### In %s : Calling btrfs_unlink_inode : Transaction id = %llu. --- ##### \n", __func__, trans->transid);
 	ret = __btrfs_unlink_inode(trans, root, dir, inode, name, name_len);
 	if (!ret) {
 		drop_nlink(inode);
+		printk(KERN_INFO " ##### In %s : Calling btrfs_update_inode: Transaction id = %llu. --- ##### \n", __func__, trans->transid);
 		ret = btrfs_update_inode(trans, root, inode);
 	}
+	printk(KERN_INFO " ##### In %s : After btrfs_unlink and update : Transaction id = %llu. --- ##### \n", __func__, trans->transid);
 	return ret;
 }
 
@@ -4603,7 +4609,7 @@ static int __btrfs_unlink(struct inode *dir, struct dentry *dentry, struct inode
 	struct inode *inode;
 	struct btrfs_root *root = BTRFS_I(dir)->root;
 	struct btrfs_trans_handle *trans;
-
+	u8 hash[32];
 	int ret;
 
 	if(!cbs_inode)
@@ -4615,9 +4621,10 @@ static int __btrfs_unlink(struct inode *dir, struct dentry *dentry, struct inode
 	if (IS_ERR(trans))
 		return PTR_ERR(trans);
 
+	printk(KERN_ERR "##### In %s, before btrfs_record_unlink_dir transaction = %llu, %llu #####\n", __func__, trans->transid, root->fs_info->generation);
 	btrfs_record_unlink_dir(trans, dir, inode, 0);
+	printk(KERN_ERR "##### In %s, after btrfs_record_unlink_dir transaction = %llu, %llu #####\n", __func__, trans->transid, root->fs_info->generation);
 
-	printk(KERN_ERR "##### In %s #####\n", __func__);
 	if(!cbs_inode)
 	{
 		printk(KERN_ERR "##### In %s : Not the CBS way. %s #####\n", __func__, dentry->d_name.name);
@@ -4631,27 +4638,38 @@ static int __btrfs_unlink(struct inode *dir, struct dentry *dentry, struct inode
 				 "fakename", 8);
 	}
 
+	printk(KERN_ERR "##### In %s, after btrfs_unlink_inode : transaction = %llu, %llu #####\n", __func__, trans->transid, root->fs_info->generation);
 
 	if (ret)
 		goto out;
 
 	if (inode->i_nlink == 0) {
 		ret = btrfs_orphan_add(trans, inode);
+		printk(KERN_ERR "##### In %s, after btrfs_orphan_add : transaction = %llu, %llu #####\n", __func__, trans->transid, root->fs_info->generation);
 		if (ret)
 			goto out;
 	}
 
 out:
-	if(dentry)
-		btrfs_cbs_del(trans, root, dentry->d_name.name);
 	btrfs_end_transaction(trans, root);
+	if(dentry && root->fs_info->cbs_info)
+	{
+		trans = __unlink_start_trans(dir);
+		if (IS_ERR(trans))
+			return PTR_ERR(trans);
+
+		printk(KERN_INFO "#### In %s : Before calling btrfs_cbs_del. Transaction id = %llu, %llu ####\n", __func__, trans->transid, root->fs_info->generation);
+		prepare_hash(dentry->d_name.name, hash);
+		btrfs_cbs_del(trans, root, hash);
+		printk(KERN_INFO "#### In %s : After calling btrfs_cbs_del. Transaction id = %llu, %llu ####\n", __func__, trans->transid, root->fs_info->generation);
+		btrfs_end_transaction(trans, root);
+	}
 	btrfs_btree_balance_dirty(root);
 	return ret;
 }
 
 static int btrfs_unlink(struct inode *dir, struct dentry *dentry)
 {
-	//printk(KERN_INFO "#### In %s : dentry name = %s ####\n",  dentry->d_name.name);
 	return __btrfs_unlink(dir, dentry, NULL);
 }
 
@@ -4922,7 +4940,6 @@ search_again:
 			goto error;
 		}
 	}
-
 
 	path->leave_spinning = 1;
 	ret = btrfs_search_slot(trans, root, &key, path, -1, 1);
@@ -5884,20 +5901,21 @@ static int btrfs_inode_by_name(struct inode *dir, struct dentry *dentry,
 	printk (KERN_INFO "#### In %s ####\n", __func__);
 	const char *name = dentry->d_name.name;
 	int namelen = dentry->d_name.len;
+	u8 hash[32];
 	struct btrfs_dir_item *di;
 	struct btrfs_path *path;
 	struct btrfs_root *root = BTRFS_I(dir)->root;
 	int ret = 0;
 	unsigned long inode_no = 0;
 	
-	//printk(KERN_ERR " ##### In %s : calling prepare_hash. name = %s. name_len = %d ##### \n", __func__, name, namelen);
-
 	path = btrfs_alloc_path();
 	if (!path)
 		return -ENOMEM;
 
 	if(root->fs_info->cbs_info && namelen > 60){
-		inode_no = prepare_hash(dir, name);
+		ret = prepare_hash(name, hash);
+		inode_no = btrfs_cbs_search(dir, hash);
+
 		printk(KERN_ERR "##### In %s : Calling btrfs_lookup_dir_item_cbs #####\n", __func__);
 		di = btrfs_lookup_dir_item_cbs(NULL, root, path, btrfs_ino(dir), name,
 					    namelen, 0, inode_no);
@@ -6670,6 +6688,7 @@ static int btrfs_insert_inode_locked(struct inode *inode)
 		   btrfs_find_actor, &args);
 }
 
+/* review */
 static struct inode *btrfs_new_inode(struct btrfs_trans_handle *trans,
 				     struct btrfs_root *root,
 				     struct inode *dir,

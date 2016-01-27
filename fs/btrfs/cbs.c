@@ -190,6 +190,7 @@ out:
 }
 
 static unsigned long ondisk_search_hash(struct btrfs_cbs_info *cbs_info, u8 *hash, struct btrfs_path *path);
+static unsigned long ondisk_search_hash_del(struct btrfs_trans_handle *trans, struct btrfs_cbs_info *cbs_info, u8 *hash, struct btrfs_path *path);
 
 int btrfs_cbs_cleanup(struct btrfs_fs_info *fs_info)
 {
@@ -210,7 +211,7 @@ static int ondisk_add(struct btrfs_trans_handle *trans,
 		      struct btrfs_cbs_hash *hash)
 {
 	printk(KERN_ERR " ##### In %s ##### \n", __func__);
-
+	printk(KERN_INFO "#### In %s : Transaction id = %llu. --- ####\n", __func__, trans->transid);
 	struct btrfs_path *path, *temp_path;
 	struct btrfs_root *cbs_root = cbs_info->cbs_root;
 	struct btrfs_key key;
@@ -226,6 +227,7 @@ static int ondisk_add(struct btrfs_trans_handle *trans,
 	temp_path = btrfs_alloc_path();
 	if (!temp_path)
 		return -ENOMEM;
+
 	inode_no = ondisk_search_hash(cbs_info, hash->hash, temp_path);
 	btrfs_free_path(temp_path);
 
@@ -251,9 +253,13 @@ static int ondisk_add(struct btrfs_trans_handle *trans,
 	key.type = BTRFS_CBS_HASH_ITEM_KEY;
 	key.offset = 0;
 
-	printk(KERN_INFO " ##### In %s : Calling btrfs_insert_empty_item ##### \n", __func__);
+	printk(KERN_INFO " ##### In %s : Calling btrfs_insert_empty_item : Transaction id = %llu. --- ##### \n", __func__, trans->transid);
+
 	ret = btrfs_insert_empty_item(trans, cbs_root, path, &key,
 			sizeof(*hash_item) + hash_len);
+
+	printk(KERN_INFO " ##### In %s : After btrfs_insert_empty_item : Transaction id = %llu. --- ##### \n", __func__, trans->transid);
+
 	//WARN_ON(ret == -EEXIST);
 
 	if (ret < 0)
@@ -273,17 +279,20 @@ static int ondisk_add(struct btrfs_trans_handle *trans,
 	btrfs_mark_buffer_dirty(path->nodes[0]);
 
 out:
-	btrfs_free_path(path);
 	mutex_unlock(&cbs_info->lock);
+	
+	btrfs_free_path(path);
 	//btrfs_free_path(temp_path);
-	printk(KERN_INFO " ##### In %s : Exiting this shit : ret = %d ##### \n", __func__, ret);
+
+	printk(KERN_INFO " ##### In %s : Exiting this shit : Transaction id = %llu. --- ##### \n", __func__, trans->transid);
 	return ret;
 }
 
 int btrfs_cbs_add(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 		    struct btrfs_cbs_hash *hash)
 {
-	printk(KERN_INFO " ##### In %s ##### \n", __func__);
+	//printk(KERN_INFO " ##### In %s ##### \n", __func__);
+	printk(KERN_INFO "#### In %s : Transaction id = %llu. %llu. ####\n", __func__, trans->transid, root->fs_info->generation);
 
 	struct btrfs_fs_info *fs_info = root->fs_info;
 	struct btrfs_cbs_info *cbs_info = fs_info->cbs_info;
@@ -300,6 +309,8 @@ int btrfs_cbs_add(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 static int ondisk_del(struct btrfs_trans_handle *trans,
 		      struct btrfs_cbs_info *cbs_info, u8 *hash)
 {
+	printk(KERN_INFO " ##### In %s ##### \n", __func__);
+
 	struct btrfs_root *cbs_root = cbs_info->cbs_root;
 	struct btrfs_path *path;
 	struct btrfs_key key;
@@ -315,19 +326,28 @@ static int ondisk_del(struct btrfs_trans_handle *trans,
 	key.offset = bytenr;
 
 	ret = btrfs_search_slot(trans, cbs_root, &key, path, -1, 1);*/
+	path->leave_spinning = 1;
+	mutex_lock(&cbs_info->lock);
 
-	ret = ondisk_search_hash(cbs_info, hash, path);
+	ret = ondisk_search_hash_del(trans, cbs_info, hash, path);
+	printk(KERN_INFO " ##### In %s : ondisk_search_hash returns %d ##### \n", __func__, ret);	
+
 	if (WARN_ON(ret == 0)) {
 		ret = -ENOENT;
 		goto out;
 	}
 	if (ret == 1)
 		goto out;
-	
+
+	//atomic_set(&path->nodes[0]->write_locks,1);
+	printk(KERN_INFO "#### In %s : Before calling btrfs_del_item. Transaction id = %llu ####\n", __func__, trans->transid);
 	btrfs_del_item(trans, cbs_root, path);
+	printk(KERN_INFO "#### In %s : After calling btrfs_del_item. Transaction id = %llu ####\n", __func__, trans->transid);
+	//atomic_set(&path->nodes[0]->write_locks,0);
 
 out:
 	mutex_unlock(&cbs_info->lock);
+	btrfs_release_path(path);
 	btrfs_free_path(path);
 	return ret;
 }
@@ -340,8 +360,13 @@ int btrfs_cbs_del(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 	struct btrfs_fs_info *fs_info = root->fs_info;
 	struct btrfs_cbs_info *cbs_info = fs_info->cbs_info;
 
-	if (cbs_info)
+	if (!cbs_info)
+		return 0;
+	else{
+		printk(KERN_INFO "#### In %s : Before calling ondisk_del. Transaction id = %llu, %llu ####\n", __func__, trans->transid, root->fs_info->generation);
 		return ondisk_del(trans, cbs_info, hash);
+		printk(KERN_INFO "#### In %s : After calling ondisk_del. Transaction id = %llu, %llu ####\n", __func__, trans->transid, root->fs_info->generation);
+	}
 
 	return -EINVAL;
 }
@@ -366,6 +391,7 @@ int btrfs_cbs_disable(struct btrfs_fs_info *fs_info)
 }
 
 /*
+ * Search hash for cbs_add. Passes NULL and cow = 0.
  * Return 0 for error
  * Return inode_no for found
  * Return 1 for not found
@@ -412,13 +438,11 @@ static unsigned long ondisk_search_hash(struct btrfs_cbs_info *cbs_info, u8 *has
 			ret = 0;
 			goto out;
 		}
-		if (ret == 0)
-			goto chi;
 		if (ret > 0) {
 			ret = 1;
 			goto out;
 		}
-chi:
+
 		node = path->nodes[0];
 		slot = path->slots[0];
 		btrfs_item_key_to_cpu(node, &key, slot);
@@ -432,7 +456,7 @@ chi:
 		read_extent_buffer(node, buf, (unsigned long)(hash_item + 1),
 				   hash_len);
 		if (!memcmp(buf, hash, hash_len)) {
-			inode_no = btrfs_cbs_inode_no(node, hash_item);
+			inode_no = btrfs_cbs_inode_no(node, hash_item); /* review? set get function */
 			printk(KERN_ERR " ##### In %s: inode_no = %lu ##### \n", __func__, inode_no);
 			ret = inode_no;
 			break;
@@ -443,6 +467,85 @@ out:
 	printk(KERN_ERR " ##### In %s: ret = %d ##### \n", __func__, ret);
 	return ret;
 }
+
+/*
+ * Search hash for cbs_del. Passes NULL and cow = 0.
+ * Return 0 for error
+ * Return inode_no for found
+ * Return 1 for not found
+ */
+static unsigned long ondisk_search_hash_del(struct btrfs_trans_handle *trans, struct btrfs_cbs_info *cbs_info, u8 *hash, struct btrfs_path *path)
+{
+	printk(KERN_ERR " ##### In %s ##### \n", __func__);
+
+	struct btrfs_key key;
+	struct btrfs_root *cbs_root = cbs_info->cbs_root;
+	u8 *buf = NULL;
+	u64 hash_key;
+	int hash_len = btrfs_cbs_sizes[cbs_info->hash_type];
+	int ret;
+	unsigned long inode_no;
+
+	buf = kmalloc(hash_len, GFP_NOFS);
+	if (!buf) {
+		ret = 0;
+		goto out;
+	}
+
+	memcpy(&hash_key, hash + hash_len - 8, 8);
+	key.objectid = hash_key;
+	key.type = BTRFS_CBS_HASH_ITEM_KEY;
+	key.offset = (u64)-1;	// doubtful
+
+	ret = btrfs_search_slot(trans, cbs_root, &key, path, -1, 1);
+	if (ret < 0)
+	{
+		ret = 0;
+		goto out;
+	}
+	//WARN_ON(ret == 0);
+	while (1) {
+		struct extent_buffer *node;
+		struct btrfs_cbs_hash_item *hash_item;
+		int slot;
+
+		ret = btrfs_previous_item(cbs_root, path, hash_key,
+					  BTRFS_CBS_HASH_ITEM_KEY);
+		printk(KERN_ERR " ##### In %s: btrfs_previous_item returns %d ##### \n", __func__, ret);
+		if (ret < 0){
+			ret = 0;
+			goto out;
+		}
+		if (ret > 0) {
+			ret = 1;
+			goto out;
+		}
+
+		node = path->nodes[0];
+		slot = path->slots[0];
+		btrfs_item_key_to_cpu(node, &key, slot);
+
+		if (key.type != BTRFS_CBS_HASH_ITEM_KEY ||
+		    memcmp(&key.objectid, hash + hash_len - 8, 8))
+			break;
+		hash_item = btrfs_item_ptr(node, slot,
+				struct btrfs_cbs_hash_item);
+	
+		read_extent_buffer(node, buf, (unsigned long)(hash_item + 1),
+				   hash_len);
+		if (!memcmp(buf, hash, hash_len)) {
+			inode_no = btrfs_cbs_inode_no(node, hash_item); /* review? set get function */
+			printk(KERN_ERR " ##### In %s: inode_no = %lu ##### \n", __func__, inode_no);
+			ret = inode_no;
+			break;
+		}
+	}
+out:
+	kfree(buf);
+	printk(KERN_ERR " ##### In %s: ret = %d ##### \n", __func__, ret);
+	return ret;
+}
+
 
 /* review */
 static unsigned long generic_search(struct inode *inode, u8 *hash)
@@ -494,12 +597,12 @@ unsigned long btrfs_cbs_search(struct inode *inode, u8* hash)
 	return inode_no;
 }
 
-static int hash_data(struct btrfs_cbs_info *cbs_info, const char *data, // review 
+static int hash_data(struct btrfs_cbs_info *cbs_info, const char *data,
 		     u64 length, struct btrfs_cbs_hash *hash)
 {
 	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 	
-	struct crypto_shash *tfm = cbs_info->cbs_driver; // review 
+	struct crypto_shash *tfm = cbs_info->cbs_driver;
 	struct {
 		struct shash_desc desc;
 		char ctx[crypto_shash_descsize(tfm)];
@@ -522,7 +625,7 @@ int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
 	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 
 	struct page *p;
-	struct btrfs_cbs_info *cbs_info = root->fs_info->cbs_info; // review 
+	struct btrfs_cbs_info *cbs_info = root->fs_info->cbs_info;
 	char *data;
 	int i;
 	int ret;
@@ -608,14 +711,13 @@ static u8 convert_hex_binary (char a)
  * Later, calls ondisk_search_hash to fetch inode_no from hash vs inode cbs tree.
  */
 
-unsigned long prepare_hash(struct inode *dir, const char* name)
+unsigned long prepare_hash(const char* name, u8 hash[32])
 {
 	printk(KERN_INFO " ##### In %s : name  = %s ##### \n", __func__, name);
 
     int i = 0, j = 0;
     unsigned long inode_no = 0;
     u8 msb, lsb;
-    u8 hash[32];
 
 	i=0;
     while(i<64)
@@ -642,8 +744,7 @@ unsigned long prepare_hash(struct inode *dir, const char* name)
     	i++;
     }
 
-	inode_no = btrfs_cbs_search(dir, hash);
+	//inode_no = btrfs_cbs_search(dir, hash);
 	
-	printk(KERN_ERR " ##### In %s: inode_no = %lu ##### \n", __func__, inode_no);
-	return inode_no;
+	return 0;
 }

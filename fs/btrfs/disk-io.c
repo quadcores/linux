@@ -4008,7 +4008,11 @@ void btrfs_mark_buffer_dirty(struct extent_buffer *buf)
 		return;
 #endif
 	root = BTRFS_I(buf->pages[0]->mapping->host)->root;
+
 	btrfs_assert_tree_locked(buf);
+
+	printk(KERN_INFO "#### In %s. Just before WARN : Transaction id = %llu. %llu. ####\n", __func__, transid, root->fs_info->generation);
+
 	if (transid != root->fs_info->generation)
 		WARN(1, KERN_CRIT "btrfs transid mismatch buffer %llu, "
 		       "found %llu running %llu\n",
