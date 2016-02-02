@@ -154,6 +154,10 @@ int btrfs_insert_dir_item(struct btrfs_trans_handle *trans, struct btrfs_root
 		goto out_free;
 	}
 
+	/*	this_len = sizeof(*dir_item)p +
+		btrfs_dir_name_len(leaf, dir_item) +
+		btrfs_dir_data_len(leaf, dir_item);*/
+
 	leaf = path->nodes[0];
 	btrfs_set_dir_item_key(leaf, dir_item, &disk_key);
 	btrfs_set_dir_type(leaf, dir_item, type);
@@ -193,8 +197,6 @@ static struct btrfs_dir_item *__btrfs_match_dir_item_name(struct btrfs_root *roo
 						 struct btrfs_path *path,
 						 const char *name, int name_len, unsigned long inode_no)
 {
-	printk(KERN_INFO " ##### In %s ##### \n", __func__);
-
 	struct btrfs_dir_item *dir_item;
 	unsigned long name_ptr;
 	struct btrfs_disk_key disk_key;
@@ -203,6 +205,7 @@ static struct btrfs_dir_item *__btrfs_match_dir_item_name(struct btrfs_root *roo
 	u32 this_len;
 	struct extent_buffer *leaf;	
 
+	printk(KERN_INFO " ##### In %s ##### \n", __func__);
 	leaf = path->nodes[0];
 	dir_item = btrfs_item_ptr(leaf, path->slots[0], struct btrfs_dir_item);
 	if (verify_dir_item(root, leaf, dir_item))
@@ -253,15 +256,13 @@ static struct btrfs_dir_item *__btrfs_lookup_dir_item(struct btrfs_trans_handle 
 					     const char *name, int name_len,
 					     int mod, unsigned long inode_no)
 {
-
 	int ret;
 	struct btrfs_key key;
 	int ins_len = mod < 0 ? -1 : 0;
 	int cow = mod != 0;
+	struct btrfs_cbs_info *cbs_info = root->fs_info->cbs_info;
 
 	printk(KERN_ERR " ##### In %s : dir = %llu. inode_no = %lu. name = %s. ##### \n", __func__, dir, inode_no, name);
-	if(trans)
-		printk(KERN_INFO " ##### In %s : Calling btrfs_search_slot : Transaction id = %llu. --- ##### \n", __func__, trans->transid);
 
 	key.objectid = dir;
 	key.type = BTRFS_DIR_ITEM_KEY;
@@ -269,18 +270,22 @@ static struct btrfs_dir_item *__btrfs_lookup_dir_item(struct btrfs_trans_handle 
 
 	ret = btrfs_search_slot(trans, root, &key, path, ins_len, cow);
 	printk(KERN_ERR " ##### In %s : ret = %d ##### \n", __func__, ret);
-	if(trans)
-		printk(KERN_INFO " ##### In %s : After btrfs_search_slot : Transaction id = %llu. --- ##### \n", __func__, trans->transid);
 
 	if (ret < 0)
 		return ERR_PTR(ret);
 	if (ret > 0)
 		return NULL;
 
-	if(inode_no == 0) {
+	if(!cbs_info) {
 		return btrfs_match_dir_item_name(root, path, name, name_len);
 	}
 	else {
+		/*printk(KERN_INFO " ##### In %s: in cbs part ##### \n", __func__);
+		leaf = path->nodes[0];
+		dir_item = btrfs_item_ptr(leaf, path->slots[0], struct btrfs_dir_item);
+		if (verify_dir_item(root, leaf, dir_item))
+			return NULL;
+		return dir_item;*/
 		return __btrfs_match_dir_item_name(root, path, name, name_len, inode_no);
 	}
 }

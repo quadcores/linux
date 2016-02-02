@@ -4942,8 +4942,6 @@ int btrfs_insert_empty_items(struct btrfs_trans_handle *trans,
 			    struct btrfs_key *cpu_key, u32 *data_size,
 			    int nr)
 {
-	printk(KERN_INFO " ##### In %s ##### \n", __func__);
-
 	int ret = 0;
 	int slot;
 	int i;
@@ -4955,11 +4953,7 @@ int btrfs_insert_empty_items(struct btrfs_trans_handle *trans,
 
 	total_size = total_data + (nr * sizeof(struct btrfs_item));
 
-	printk(KERN_INFO " ##### In %s : Calling btrfs_search_slot ##### \n", __func__);
-
 	ret = btrfs_search_slot(trans, root, cpu_key, path, total_size, 1);
-	printk(KERN_INFO " ##### In %s : btrfs_search_slot returns %d. ##### \n", __func__, ret);
-
 	if (ret == 0)
 		return -EEXIST;
 	if (ret < 0)
@@ -4967,7 +4961,6 @@ int btrfs_insert_empty_items(struct btrfs_trans_handle *trans,
 
 	slot = path->slots[0];
 	BUG_ON(slot < 0);
-	printk(KERN_INFO " ##### In %s : slot set successfully. Calling setup_items_for_insert ##### \n", __func__);
 
 	setup_items_for_insert(root, path, cpu_key, data_size,
 			       total_data, total_size, nr);
@@ -5082,9 +5075,6 @@ static noinline void btrfs_del_leaf(struct btrfs_trans_handle *trans,
 int btrfs_del_items(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 		    struct btrfs_path *path, int slot, int nr)
 {
-	printk(KERN_INFO " ##### In %s : slot = %d. nr = %d. ##### \n", __func__, slot, nr);
-	printk(KERN_INFO "#### In %s : Transaction id = %llu, %llu ####\n", __func__, trans->transid, root->fs_info->generation);
-
 	struct extent_buffer *leaf;
 	struct btrfs_item *item;
 	u32 last_off;
@@ -5184,18 +5174,14 @@ int btrfs_del_items(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 				 */
 
 				if (path->nodes[0] == leaf) {
-					printk(KERN_INFO " ##### In %s : Calling btrfs_mark_buffer_dirty from if ##### \n", __func__);
 					btrfs_mark_buffer_dirty(leaf);
 				}
 				free_extent_buffer(leaf);
 			}
 		} else {
-			printk(KERN_INFO " ##### In %s : Calling btrfs_mark_buffer_dirty from else ##### \n", __func__);
 			btrfs_mark_buffer_dirty(leaf);
 		}
 	}
-	printk(KERN_INFO "#### In %s : Before returning from here Transaction id = %llu, %llu ####\n", __func__, trans->transid, root->fs_info->generation);
-
 	return ret;
 }
 

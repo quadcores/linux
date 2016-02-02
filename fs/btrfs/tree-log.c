@@ -873,7 +873,6 @@ static noinline int inode_in_dir(struct btrfs_root *root,
 				 u64 dirid, u64 objectid, u64 index,
 				 const char *name, int name_len)
 {
-	printk (KERN_INFO "#### In %s ####\n", __func__);
 	struct btrfs_dir_item *di;
 	struct btrfs_key location;
 	int match = 0;
@@ -975,7 +974,6 @@ static inline int __add_inode_ref(struct btrfs_trans_handle *trans,
 				  u64 ref_index, char *name, int namelen,
 				  int *search_done)
 {
-	printk (KERN_INFO "#### In %s ####\n", __func__);
 	int ret;
 	char *victim_name;
 	int victim_name_len;
@@ -1672,7 +1670,6 @@ static noinline int replay_one_name(struct btrfs_trans_handle *trans,
 				    struct btrfs_dir_item *di,
 				    struct btrfs_key *key)
 {
-	printk (KERN_INFO "#### In %s ####\n", __func__);
 	char *name;
 	int name_len;
 	struct btrfs_dir_item *dst_di;
@@ -1964,7 +1961,6 @@ static noinline int check_item_in_log(struct btrfs_trans_handle *trans,
 				      struct inode *dir,
 				      struct btrfs_key *dir_key)
 {
-	printk (KERN_INFO "#### In %s ####\n", __func__);
 	int ret;
 	struct extent_buffer *eb;
 	int slot;
@@ -3068,7 +3064,6 @@ int btrfs_del_dir_entries_in_log(struct btrfs_trans_handle *trans,
 				 const char *name, int name_len,
 				 struct inode *dir, u64 index)
 {
-	printk (KERN_INFO "#### In %s ####\n", __func__);
 	struct btrfs_root *log;
 	struct btrfs_dir_item *di;
 	struct btrfs_path *path;

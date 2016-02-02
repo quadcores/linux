@@ -1321,7 +1321,6 @@ static noinline int create_pending_snapshot(struct btrfs_trans_handle *trans,
 				   struct btrfs_fs_info *fs_info,
 				   struct btrfs_pending_snapshot *pending)
 {
-	printk (KERN_INFO "#### In %s ####\n", __func__);
 	struct btrfs_key key;
 	struct btrfs_root_item *new_root_item;
 	struct btrfs_root *tree_root = fs_info->tree_root;

@@ -1014,13 +1014,13 @@ err:
 
 static int get_default_subvol_objectid(struct btrfs_fs_info *fs_info, u64 *objectid)
 {
-	printk (KERN_INFO "#### In %s ####\n", __func__);
 	struct btrfs_root *root = fs_info->tree_root;
 	struct btrfs_dir_item *di;
 	struct btrfs_path *path;
 	struct btrfs_key location;
 	u64 dir_id;
 
+	printk (KERN_INFO "#### In %s ####\n", __func__);
 	path = btrfs_alloc_path();
 	if (!path)
 		return -ENOMEM;

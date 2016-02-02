@@ -80,7 +80,6 @@ static inline struct inmem_hash *inmem_alloc_hash(u16 type)
 int btrfs_dedup_enable(struct btrfs_fs_info *fs_info, u16 type, u16 backend,
 		       u64 blocksize, u64 limit)
 {
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 	struct btrfs_dedup_info *dedup_info;
 	struct btrfs_root *dedup_root;
 	struct btrfs_key key;
@@ -91,6 +90,7 @@ int btrfs_dedup_enable(struct btrfs_fs_info *fs_info, u16 type, u16 backend,
 	u64 compat_ro_flag;
 	int ret = 0;
 
+	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 	/* Sanity check */
 	if (blocksize > BTRFS_DEDUP_BLOCKSIZE_MAX ||
 	    blocksize < BTRFS_DEDUP_BLOCKSIZE_MIN ||
@@ -273,12 +273,11 @@ int btrfs_dedup_cleanup(struct btrfs_fs_info *fs_info)
 static int inmem_insert_hash(struct rb_root *root,
 			     struct inmem_hash *hash, int hash_len)
 {
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
-
 	struct rb_node **p = &root->rb_node;
 	struct rb_node *parent = NULL;
 	struct inmem_hash *entry = NULL;
 
+	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 	while (*p) {
 		parent = *p;
 		entry = rb_entry(parent, struct inmem_hash, hash_node);
@@ -339,12 +338,11 @@ static void __inmem_del(struct btrfs_dedup_info *dedup_info,
 static int inmem_add(struct btrfs_dedup_info *dedup_info,
 		     struct btrfs_dedup_hash *hash)
 {
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
-
 	int ret = 0;
 	u16 type = dedup_info->hash_type;
 	struct inmem_hash *ihash;
 
+	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 	ihash = inmem_alloc_hash(type);
 
 	if (!ihash)
@@ -401,8 +399,6 @@ static int ondisk_add(struct btrfs_trans_handle *trans,
 		      struct btrfs_dedup_info *dedup_info,
 		      struct btrfs_dedup_hash *hash)
 {
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
-
 	struct btrfs_path *path;
 	struct btrfs_root *dedup_root = dedup_info->dedup_root;
 	struct btrfs_key key;
@@ -412,6 +408,7 @@ static int ondisk_add(struct btrfs_trans_handle *trans,
 	int hash_len = btrfs_dedup_sizes[dedup_info->hash_type];
 	int ret;
 
+	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 	path = btrfs_alloc_path();
 	if (!path)
 		return -ENOMEM;
@@ -477,8 +474,6 @@ out:
 int btrfs_dedup_add(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 		    struct btrfs_dedup_hash *hash)
 {
-	printk(KERN_INFO " ##### In %s ##### \n", __func__);
-
 	struct btrfs_fs_info *fs_info = root->fs_info;
 	struct btrfs_dedup_info *dedup_info = fs_info->dedup_info;
 
@@ -655,11 +650,10 @@ static void inmem_destroy(struct btrfs_fs_info *fs_info)
 
 int btrfs_dedup_disable(struct btrfs_fs_info *fs_info)
 {
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
-
 	struct btrfs_dedup_info *dedup_info = fs_info->dedup_info;
 	int ret = 0;
 
+	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 	if (!dedup_info)
 		return 0;
 
@@ -681,8 +675,6 @@ int btrfs_dedup_disable(struct btrfs_fs_info *fs_info)
 static int ondisk_search_hash(struct btrfs_dedup_info *dedup_info, u8 *hash,
 			      u64 *bytenr_ret, u32 *num_bytes_ret)
 {
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
-
 	struct btrfs_path *path;
 	struct btrfs_key key;
 	struct btrfs_root *dedup_root = dedup_info->dedup_root;
@@ -754,8 +746,6 @@ out:
 static struct inmem_hash *
 inmem_search_hash(struct btrfs_dedup_info *dedup_info, u8 *hash)
 {
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
-
 	struct rb_node **p = &dedup_info->hash_root.rb_node;
 	struct rb_node *parent = NULL;
 	struct inmem_hash *entry = NULL;
@@ -785,8 +775,6 @@ static inline int generic_search_hash(struct btrfs_dedup_info *dedup_info,
 				      u8 *hash, u64 *bytenr_ret,
 				      u32 *num_bytes_ret)
 {
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
-
 	if (dedup_info->backend == BTRFS_DEDUP_BACKEND_INMEMORY) {
 		struct inmem_hash *found_hash;
 		int ret;
@@ -812,8 +800,6 @@ static inline int generic_search_hash(struct btrfs_dedup_info *dedup_info,
 static int generic_search(struct inode *inode, u64 file_pos,
 			struct btrfs_dedup_hash *hash)
 {
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
-
 	int ret;
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	struct btrfs_fs_info *fs_info = root->fs_info;
@@ -905,8 +891,6 @@ out:
 int btrfs_dedup_search(struct inode *inode, u64 file_pos,
 		       struct btrfs_dedup_hash *hash)
 {
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
-
 	struct btrfs_fs_info *fs_info = BTRFS_I(inode)->root->fs_info;
 	struct btrfs_dedup_info *dedup_info = fs_info->dedup_info;
 	int ret = 0;
@@ -928,8 +912,6 @@ int btrfs_dedup_search(struct inode *inode, u64 file_pos,
 static int hash_data(struct btrfs_dedup_info *dedup_info, const char *data,
 		     u64 length, struct btrfs_dedup_hash *hash)
 {
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
-	
 	struct crypto_shash *tfm = dedup_info->dedup_driver;
 	struct {
 		struct shash_desc desc;
@@ -943,7 +925,6 @@ static int hash_data(struct btrfs_dedup_info *dedup_info, const char *data,
 	ret = crypto_shash_digest(&sdesc.desc, data, length,
 				  (char *)(hash->hash));
 
-	printk(KERN_INFO "%s : crypto_shash_digest returned %d #####_______ \n", __func__, ret);
 	return ret;
 }
 

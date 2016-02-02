@@ -2428,8 +2428,6 @@ static int bio_readpage_error(struct bio *failed_bio, u64 phy_offset,
 
 void end_extent_writepage(struct page *page, int err, u64 start, u64 end)
 {
-	//printk(KERN_INFO " ##### In %s ##### \n", __func__);
-
 	int uptodate = (err == 0);
 	struct extent_io_tree *tree;
 	int ret = 0;
@@ -3274,8 +3272,6 @@ static noinline_for_stack int writepage_delalloc(struct inode *inode,
 					       &delalloc_start,
 					       &delalloc_end,
 					       BTRFS_MAX_EXTENT_SIZE);
-		//printk(KERN_INFO " #### In %s, end = %lu ####\n", __func__, delalloc_end);
-
 		if (nr_delalloc == 0) {
 			delalloc_start = delalloc_end + 1;
 			continue;
@@ -3507,8 +3503,6 @@ done_unlocked:
 static int __extent_writepage(struct page *page, struct writeback_control *wbc,
 			      void *data)
 {
-	//printk(KERN_INFO " ##### In %s ##### \n", __func__);
-
 	struct inode *inode = page->mapping->host;
 	struct extent_page_data *epd = data;
 	u64 start = page_offset(page);
@@ -3954,8 +3948,6 @@ static int extent_write_cache_pages(struct extent_io_tree *tree,
 			     writepage_t writepage, void *data,
 			     void (*flush_fn)(void *))
 {
-	printk(KERN_INFO " ##### In %s ##### \n", __func__);
-
 	struct inode *inode = mapping->host;
 	int ret = 0;
 	int done = 0;
@@ -4097,8 +4089,6 @@ int extent_write_full_page(struct extent_io_tree *tree, struct page *page,
 			  get_extent_t *get_extent,
 			  struct writeback_control *wbc)
 {
-	printk(KERN_INFO " ##### In %s, calculating hash ##### \n", __func__);
-
 	int ret;
 	struct extent_page_data epd = {
 		.bio = NULL,
