@@ -2466,44 +2466,53 @@ static int btrfs_read_roots(struct btrfs_fs_info *fs_info,
 		fs_info->free_space_root = root;
 	}
 
-	location.objectid = BTRFS_DEDUP_TREE_OBJECTID;
-	root = btrfs_read_tree_root(tree_root, &location);
-	if (IS_ERR(root)) {
-		ret = PTR_ERR(root);
-		if (ret != -ENOENT)
-			return ret;
-		/* Just OK if there is no dedup root */
-		return 0;
+	if (btrfs_fs_compat_ro(fs_info, DEDUP)) {
+		location.objectid = BTRFS_DEDUP_TREE_OBJECTID;
+		root = btrfs_read_tree_root(tree_root, &location);
+		if (IS_ERR(root)) {
+			ret = PTR_ERR(root);
+			if (ret != -ENOENT)
+				return ret;
+			/* Just OK if there is no dedup root */
+			return 0;
+		}
+
+		set_bit(BTRFS_ROOT_TRACK_DIRTY, &root->state);
+		/* Found dedup root, resume previous dedup setup */
+		ret = btrfs_dedup_resume(fs_info, root);
+
+		if (ret < 0) {
+			free_root_extent_buffers(root);
+			kfree(root);
+		}
 	}
 
-	set_bit(BTRFS_ROOT_TRACK_DIRTY, &root->state);
-	/* Found dedup root, resume previous dedup setup */
-	ret = btrfs_dedup_resume(fs_info, root);
+	if (btrfs_fs_compat_ro(fs_info, CBS)) {
+		location.objectid = BTRFS_CBS_TREE_OBJECTID;
+		root = btrfs_read_tree_root(tree_root, &location);
+		if (IS_ERR(root)) {
+			ret = PTR_ERR(root);
+			if (ret != -ENOENT)
+				return ret;
+			/* Just OK if there is no cbs root */
+			return 0;
+		}
 
-	if (ret < 0) {
-		free_root_extent_buffers(root);
-		kfree(root);
+		set_bit(BTRFS_ROOT_TRACK_DIRTY, &root->state);
+		/* Found cbs root, resume previous cbs setup */
+		ret = btrfs_cbs_resume(fs_info, root);
+
+		if (ret < 0) {
+			free_root_extent_buffers(root);
+			kfree(root);
+		}
 	}
 
-	location.objectid = BTRFS_CBS_TREE_OBJECTID;
-	root = btrfs_read_tree_root(tree_root, &location);
-	if (IS_ERR(root)) {
-		ret = PTR_ERR(root);
-		if (ret != -ENOENT)
-			return ret;
-		/* Just OK if there is no cbs root */
-		return 0;
+	else {
+		printk(KERN_INFO "#### Dedup & Cbs is not enabled #### \n");
+		ret = 0;
 	}
-
-	set_bit(BTRFS_ROOT_TRACK_DIRTY, &root->state);
-	/* Found cbs root, resume previous cbs setup */
-	ret = btrfs_cbs_resume(fs_info, root);
-
-	if (ret < 0) {
-		free_root_extent_buffers(root);
-		kfree(root);
-	}
-
+	
 	return ret;
 }
 

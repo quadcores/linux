@@ -123,12 +123,15 @@ int btrfs_dedup_enable(struct btrfs_fs_info *fs_info, u16 type, u16 backend,
 		return -EINVAL;
 
 	if (fs_info->dedup_info) {
+		printk(KERN_ERR " IF # # # # # In %s ##### \n", __func__);
 		dedup_info = fs_info->dedup_info;
 
 		/* Check if we are re-enable for different dedup config */
 		if (dedup_info->blocksize != blocksize ||
 		    dedup_info->hash_type != type ||
-		    dedup_info->backend != backend) {
+		    dedup_info->backend != backend) 
+		{
+			printk(KERN_ERR " IF # # # # # In %s ##### \n", __func__);
 			btrfs_dedup_disable(fs_info);
 			goto enable;
 		}
@@ -209,6 +212,8 @@ out:
 int btrfs_dedup_resume(struct btrfs_fs_info *fs_info,
 		       struct btrfs_root *dedup_root)
 {
+	printk(KERN_INFO "# # # # In %s # # # # \n",__func__);
+
 	struct btrfs_dedup_status_item *status;
 	struct btrfs_key key;
 	struct btrfs_path *path;
@@ -256,11 +261,18 @@ static int ondisk_search_hash(struct btrfs_dedup_info *dedup_info, u8 *hash,
 static void inmem_destroy(struct btrfs_fs_info *fs_info);
 int btrfs_dedup_cleanup(struct btrfs_fs_info *fs_info)
 {
-	if (!fs_info->dedup_info)
+	printk(KERN_INFO "# # # # In %s # # # # \n",__func__);
+
+	if (!fs_info->dedup_info) {
+			printk(KERN_INFO "# # # # In %s 1 # # # # \n",__func__);
+
 		return 0;
+	}
 	if (fs_info->dedup_info->backend == BTRFS_DEDUP_BACKEND_INMEMORY)
 		inmem_destroy(fs_info);
 	if (fs_info->dedup_info->dedup_root) {
+		printk(KERN_INFO "# # # # In %s 2 # # # # \n",__func__);
+
 		free_root_extent_buffers(fs_info->dedup_info->dedup_root);
 		kfree(fs_info->dedup_info->dedup_root);
 	}

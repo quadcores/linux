@@ -25,6 +25,9 @@
 
 static int init_cbs_info(struct btrfs_fs_info *fs_info, u16 type)
 {
+
+	printk(KERN_INFO "# # # # In %s # # # # \n",__func__);
+
 	struct btrfs_cbs_info *cbs_info;
 	int ret;
 
@@ -71,11 +74,13 @@ int btrfs_cbs_enable(struct btrfs_fs_info *fs_info, u16 type)
 		return -EINVAL;
 
 	if (fs_info->cbs_info) {
+		printk(KERN_ERR " IF # # # # # In %s ##### \n", __func__);
 		cbs_info = fs_info->cbs_info;
 
-		/* Check if we are re-enable for different cbs config */
+		/* Check if we re-enable for different cbs config */
 		if (cbs_info->hash_type != type)
 		{
+			printk(KERN_ERR " IF IF # # # # # In %s ##### \n", __func__);
 			btrfs_cbs_disable(fs_info);
 			goto enable;
 		}
@@ -158,6 +163,8 @@ int btrfs_cbs_resume(struct btrfs_fs_info *fs_info,
 	u16 type;
 	int ret = 0;
 
+	printk(KERN_INFO "# # # # In %s # # # # \n",__func__);
+
 	path = btrfs_alloc_path();
 	if (!path)
 		return -ENOMEM;
@@ -193,10 +200,16 @@ static unsigned long ondisk_search_hash_del(struct btrfs_trans_handle *trans, st
 
 int btrfs_cbs_cleanup(struct btrfs_fs_info *fs_info)
 {
-	if (!fs_info->cbs_info)
+
+	printk(KERN_INFO "# # # # In %s # # # # \n",__func__);
+
+	if (!fs_info->cbs_info){
+		printk(KERN_INFO "# # # # In %s 1 # # # # \n",__func__);
 		return 0;
+	}
 	
 	if (fs_info->cbs_info->cbs_root) {
+		printk(KERN_INFO "# # # # In %s 2 # # # # \n",__func__);
 		free_root_extent_buffers(fs_info->cbs_info->cbs_root);
 		kfree(fs_info->cbs_info->cbs_root);
 	}
@@ -290,7 +303,6 @@ int btrfs_cbs_add(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 static int ondisk_del(struct btrfs_trans_handle *trans,
 		      struct btrfs_cbs_info *cbs_info, u8 *hash)
 {
-
 	struct btrfs_root *cbs_root = cbs_info->cbs_root;
 	struct btrfs_path *path;
 	int ret = 0;
