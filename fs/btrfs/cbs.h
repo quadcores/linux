@@ -107,7 +107,7 @@ int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
  * Later, calls ondisk_search_hash to fetch inode_no from hash vs inode cbs tree.
  */
 
-unsigned long prepare_hash(struct inode *dir, const char* name);
+unsigned long prepare_hash(const char* name, u8 hash[32]);
 
 /*
  * Search for duplicated extents by calculated hash
@@ -134,5 +134,5 @@ int btrfs_cbs_add(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 
 /* Remove a cbs hash from cbs info */
 int btrfs_cbs_del(struct btrfs_trans_handle *trans, struct btrfs_root *root,
-		    u64 bytenr);
+		    u8 *hash);
 #endif

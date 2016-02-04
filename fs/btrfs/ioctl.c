@@ -3222,7 +3222,6 @@ out:
 
 static long btrfs_ioctl_dedup_ctl(struct btrfs_root *root, void __user *args)
 {
-        printk(KERN_INFO " ##### In %s ##### \n", __func__);
 	struct btrfs_ioctl_dedup_args *dargs;
 	struct btrfs_fs_info *fs_info = root->fs_info;
 	struct btrfs_dedup_info *dedup_info;
@@ -3283,12 +3282,12 @@ out:
 
 static long btrfs_ioctl_cbs_ctl(struct btrfs_root *root, void __user *args)
 {
-    printk(KERN_INFO " ##### In %s ##### \n", __func__);
 	struct btrfs_ioctl_cbs_args *dargs;
 	struct btrfs_fs_info *fs_info = root->fs_info;
 	struct btrfs_cbs_info *cbs_info;
 	int ret;
 
+    printk(KERN_INFO " ##### In %s ##### \n", __func__);
 	if (!capable(CAP_SYS_ADMIN))
 		return -EPERM;
 

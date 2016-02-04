@@ -2921,6 +2921,8 @@ again:
 			}
 
 			btrfs_set_path_blocking(p);
+			//printk(KERN_INFO "##### In btrfs_search_slot : Quad here. #####\n");
+
 			err = btrfs_cow_block(trans, root, b,
 					      p->nodes[level + 1],
 					      p->slots[level + 1], &b);
@@ -2953,9 +2955,9 @@ cow_done:
 			}
 		}
 
-		if(fs_info->cbs_info && key->type == BTRFS_DIR_ITEM_KEY)
+	  /*if(fs_info->cbs_info && key->type == BTRFS_DIR_ITEM_KEY)
 			ret = key_search_cbs(b, key, level, &prev_cmp, &slot);
-		else
+		else*/
 			ret = key_search(b, key, level, &prev_cmp, &slot);
 
 		if (level != 0) {
@@ -4950,6 +4952,7 @@ int btrfs_insert_empty_items(struct btrfs_trans_handle *trans,
 		total_data += data_size[i];
 
 	total_size = total_data + (nr * sizeof(struct btrfs_item));
+
 	ret = btrfs_search_slot(trans, root, cpu_key, path, total_size, 1);
 	if (ret == 0)
 		return -EEXIST;
@@ -5169,8 +5172,10 @@ int btrfs_del_items(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 				 * push_leaf functions must have already
 				 * dirtied this buffer
 				 */
-				if (path->nodes[0] == leaf)
+
+				if (path->nodes[0] == leaf) {
 					btrfs_mark_buffer_dirty(leaf);
+				}
 				free_extent_buffer(leaf);
 			}
 		} else {

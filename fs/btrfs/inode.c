@@ -116,6 +116,7 @@ static struct extent_map *create_pinned_em(struct inode *inode, u64 start,
 					   int type);
 
 static int btrfs_dirty_inode(struct inode *inode);
+static int __btrfs_unlink(struct inode *dir, struct dentry *dentry, struct inode *cbs_inode);
 
 #ifdef CONFIG_BTRFS_FS_RUN_SANITY_TESTS
 void btrfs_test_inode_set_ops(struct inode *inode)
@@ -772,27 +773,24 @@ static noinline int
 run_delalloc_cbs(struct inode *inode, struct page *locked_page, u64 start,
 		   u64 end, struct async_cow *async_cow)
 {
-	printk(KERN_INFO " #### In %s ####\n", __func__);
 	int ret = 0;
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	struct btrfs_trans_handle *trans = NULL;
 	struct btrfs_root *cbs_root = root->fs_info->cbs_info->cbs_root;
+	struct inode *root_inode = root->fs_info->sb->s_root->d_inode;
 	u64 blocksize = root->sectorsize;
-	int found = 0;
-	
-	int quad_ctr = 0;
+	int found = 0, quad_ctr = 0;
 	struct btrfs_cbs_info *cbs_info = root->fs_info->cbs_info;
 	u16 hash_type = cbs_info->hash_type;
 	struct btrfs_cbs_hash *hash = NULL;
 	u64 hash_num_bytes;
 	bool nolock;
 
+	printk(KERN_INFO " #### In %s ####\n", __func__);
 	nolock = btrfs_is_free_space_inode(inode);
 
 	hash = btrfs_cbs_alloc_hash(hash_type);
 	if (!hash) {
-		printk(KERN_INFO " #### In %s, in if(!hash) ####\n", __func__);
-
 		ret = -ENOMEM;
 		return ret;
 	}
@@ -805,11 +803,8 @@ run_delalloc_cbs(struct inode *inode, struct page *locked_page, u64 start,
 
 	if(hash_num_bytes-1 == end)
 	{
-		printk(KERN_INFO "______#### Calling CBS_CALC_HASH #####_______ \n");
-
 		ret = btrfs_cbs_calc_hash(root, inode, 0, i_size_read(inode)-1, hash);
 		if (ret < 0) {
-			printk(KERN_INFO "______#### error %d #####_______ \n", ret);
 			return ret;
 		}
 
@@ -843,18 +838,20 @@ run_delalloc_cbs(struct inode *inode, struct page *locked_page, u64 start,
 		trans->block_rsv = &root->fs_info->delalloc_block_rsv;
 
 		ret = btrfs_cbs_add(trans, cbs_root, hash);
-		
+
 		printk(KERN_INFO " #### In %s : Hash insertion successful! %d ####\n", __func__, ret);
 	} else {
 		/* decrement ref count */
-		printk(KERN_INFO " #### In %s : Hash hit. Skipping insertion for now. ####\n", __func__);
+		printk(KERN_INFO " #### In %s : Hash hit. Skipping insertion for now. Parent inode = %lu. ####\n",
+								 __func__, root_inode->i_ino);
+
+		__btrfs_unlink(root_inode, NULL, inode);
 	}
 
 	out:
 		kfree(hash);
 		if(trans){
 			btrfs_end_transaction(trans, root);
-			printk(KERN_INFO " #### Transaction ended successfully #### \n");
 		}
 		return ret;
 }
@@ -867,7 +864,6 @@ static noinline int
 run_delalloc_dedup(struct inode *inode, struct page *locked_page, u64 start,
 		   u64 end, struct async_cow *async_cow)
 {
-	printk(KERN_INFO " #### In %s ####\n", __func__);
 
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	struct extent_map_tree *em_tree = &BTRFS_I(inode)->extent_tree;
@@ -883,7 +879,6 @@ run_delalloc_dedup(struct inode *inode, struct page *locked_page, u64 start,
 	int found = 0;
 	int type = 0;
 	int ret = 0;
-	int quad_ctr = 0;
 	struct extent_state *cached_state = NULL;
 	struct btrfs_dedup_info *dedup_info = root->fs_info->dedup_info;
 	u64 dedup_bs = dedup_info->blocksize;
@@ -891,29 +886,15 @@ run_delalloc_dedup(struct inode *inode, struct page *locked_page, u64 start,
 	u16 hash_type = dedup_info->hash_type;
 	struct btrfs_dedup_hash *hash = NULL;
 
-	u16 cbs_hash_type = dedup_info->hash_type;
-	struct btrfs_cbs_hash *cbs_hash = NULL;
-
-	u64 hash_num_bytes;
+	printk(KERN_INFO " #### In %s ####\n", __func__);
 
 	WARN_ON(btrfs_is_free_space_inode(inode));
 
 	num_bytes = ALIGN(end - start + 1, blocksize);
-
 	num_bytes = max(blocksize, num_bytes);
 
 	hash = btrfs_dedup_alloc_hash(hash_type);
 	if (!hash) {
-		printk(KERN_INFO " #### In %s, in if(!hash) ####\n", __func__);
-
-		ret = -ENOMEM;
-		goto out;
-	}
-
-	cbs_hash = btrfs_cbs_alloc_hash(cbs_hash_type);
-	if (!cbs_hash) {
-		printk(KERN_INFO " #### In %s, in if(!hash) ####\n", __func__);
-
 		ret = -ENOMEM;
 		goto out;
 	}
@@ -924,35 +905,8 @@ run_delalloc_dedup(struct inode *inode, struct page *locked_page, u64 start,
 
 		unsigned long op = 0;
 
-		/* cbs full file hash calculation
-
-		hash_num_bytes = ALIGN(i_size_read(inode), blocksize);
-
-		printk(KERN_INFO "____________________________##### start = %llu, end = %llu #### ______\n", start, end);
-
-		if(hash_num_bytes-1 == end)
-		{
-			printk(KERN_INFO "______#### Calling CBS_CALC_HASH #####_______ \n");
-
-			ret = btrfs_cbs_calc_hash(root, inode, 0, i_size_read(inode)-1, cbs_hash);
-			if (ret < 0) {
-				printk(KERN_INFO "______#### error %d #####_______ \n", ret);
-				goto out;
-			}
-
-			printk(KERN_INFO "_______________#### Ultimate hash is #####_______________ \n");
-			for(quad_ctr=0;quad_ctr<32;quad_ctr++)
-				printk(KERN_CONT "%hhx", cbs_hash -> hash[quad_ctr]);
-
-			printk(KERN_INFO "______#### CBS_CALC_HASH successful #####_______ \n");
-		}
-
-		/* cbs ends */
-
 		/* too small data, go for normal path */
 		if (num_bytes < dedup_bs) {
-			printk(KERN_INFO " #### In %s, in num_bytes < dedup_bs ####\n", __func__);
-
 			int page_started = 0;
 			unsigned long nr_written = 0;
 
@@ -966,8 +920,6 @@ run_delalloc_dedup(struct inode *inode, struct page *locked_page, u64 start,
 			/* Now locked_page is not dirty. */
 			if (page_offset(locked_page) >= start &&
 			    page_offset(locked_page) <= cur_end) {
-				printk(KERN_INFO " #### In %s, calling __set_page_dirty_nobuffers ####\n", __func__);
-
 				__set_page_dirty_nobuffers(locked_page);
 			}
 
@@ -975,15 +927,10 @@ run_delalloc_dedup(struct inode *inode, struct page *locked_page, u64 start,
 
 			/* allocate blocks */
 
-			printk_once(KERN_INFO " #### In %s, calling cow_file_range ####\n", __func__);
-		
 			ret = cow_file_range(inode, page, start, cur_end,
 					     &page_started, &nr_written, 0);
 
 			if (!page_started && !ret) {
-
-				printk_once(KERN_INFO " #### In %s, calling extent_write_locked_range ####\n", __func__);
-			
 				extent_write_locked_range(tree, inode, start,
 						cur_end, btrfs_get_extent,
 						WB_SYNC_ALL);
@@ -992,13 +939,8 @@ run_delalloc_dedup(struct inode *inode, struct page *locked_page, u64 start,
 				unlock_page(page);
 
 			if (ret) {
-
-				printk_once(KERN_INFO " #### In %s, calling SetPageError ####\n", __func__);
-			
 				SetPageError(page);
 			}
-
-			printk_once(KERN_INFO " #### In %s, calling page_cache_release ####\n", __func__);
 
 			page_cache_release(page);
 			page = NULL;
@@ -1006,12 +948,7 @@ run_delalloc_dedup(struct inode *inode, struct page *locked_page, u64 start,
 			num_bytes = 0;
 			start += num_bytes;
 
-			printk_once(KERN_INFO " #### In %s, calling cond_resched ####\n", __func__);
-
 			cond_resched();
-
-			printk_once(KERN_INFO " #### In %s, called cond_resched ####\n", __func__);
-
 			continue;
 		}
 
@@ -1106,7 +1043,6 @@ out:
 			     PAGE_END_WRITEBACK | PAGE_CLEAR_DIRTY);
 
 	kfree(hash);
-	kfree(cbs_hash);
 	free_extent_state(cached_state);
 	return ret;
 
@@ -1115,6 +1051,180 @@ out_reserve:
 		btrfs_free_reserved_extent(root, ins.objectid, ins.offset, 1);
 	goto out;
 }
+
+
+/*
+ * Run dedup for delalloc range
+ * Will calculate the hash for the range.
+ */
+static noinline int
+run_delalloc(struct inode *inode, struct page *locked_page, u64 start,
+		   u64 end, struct async_cow *async_cow)
+{
+
+	struct btrfs_root *root = BTRFS_I(inode)->root;
+	struct extent_map_tree *em_tree = &BTRFS_I(inode)->extent_tree;
+	struct extent_io_tree *tree = &BTRFS_I(inode)->io_tree;
+	struct extent_map *em;
+	struct page *page = NULL;
+	struct btrfs_key ins;
+	u64 blocksize = root->sectorsize;
+	u64 num_bytes;
+	u64 cur_alloc_size;
+	u64 cur_end;
+	u64 alloc_hint = 0;
+	int found = 0;
+	int type = 0;
+	int ret = 0;
+	struct extent_state *cached_state = NULL;
+
+	printk(KERN_INFO " #### In %s ####\n", __func__);
+
+	WARN_ON(btrfs_is_free_space_inode(inode));
+
+	num_bytes = ALIGN(end - start + 1, blocksize);
+	num_bytes = max(blocksize, num_bytes);
+
+	btrfs_drop_extent_cache(inode, start, start + num_bytes - 1, 0);
+
+	while (num_bytes > 0) {
+
+		unsigned long op = 0;
+
+		/* too small data, go for normal path */
+		if (num_bytes < PAGE_CACHE_SIZE*8) {
+			int page_started = 0;
+			unsigned long nr_written = 0;
+
+			/* page has been locked by caller */
+			page = find_get_page(inode->i_mapping,
+					     start >> PAGE_CACHE_SHIFT);
+			WARN_ON(!page); /* page should be here */
+
+			cur_end = start + num_bytes - 1;
+
+			/* Now locked_page is not dirty. */
+			if (page_offset(locked_page) >= start &&
+			    page_offset(locked_page) <= cur_end) {
+				__set_page_dirty_nobuffers(locked_page);
+			}
+
+			lock_extent(tree, start, cur_end);
+
+			/* allocate blocks */
+
+			ret = cow_file_range(inode, page, start, cur_end,
+					     &page_started, &nr_written, 0);
+
+			if (!page_started && !ret) {
+				extent_write_locked_range(tree, inode, start,
+						cur_end, btrfs_get_extent,
+						WB_SYNC_ALL);
+			}
+			else if (ret)
+				unlock_page(page);
+
+			if (ret) {
+				SetPageError(page);
+			}
+
+			page_cache_release(page);
+			page = NULL;
+
+			num_bytes = 0;
+			start += num_bytes;
+
+			cond_resched();
+			continue;
+		}
+
+		cur_alloc_size = num_bytes;
+		//WARN_ON(cur_alloc_size < dedup_bs);	/* shouldn't happen */
+		cur_end = start + cur_alloc_size - 1;
+
+		/* see comments in compress_file_range */
+		extent_range_clear_dirty_for_io(inode, start, end);
+
+		ret = btrfs_reserve_extent(root, cur_alloc_size,
+				   cur_alloc_size, 0, alloc_hint,
+				   &ins, 1, 1);
+
+		if (ret < 0)
+			goto out;
+	
+		lock_extent(tree, start, end);
+
+		em = alloc_extent_map();
+		if (!em) {
+			ret = -ENOMEM;
+			goto out_reserve;
+		}
+		em->start = start;
+		em->orig_start = em->start;
+		em->len = cur_alloc_size;
+		em->mod_start = em->start;
+		em->mod_len = em->len;
+
+		em->block_start = ins.objectid;
+		em->block_len = ins.offset;
+		em->orig_block_len = ins.offset;
+		em->bdev = root->fs_info->fs_devices->latest_bdev;
+		set_bit(EXTENT_FLAG_PINNED, &em->flags);
+		em->generation = -1;
+
+		while (1) {
+			write_lock(&em_tree->lock);
+			ret = add_extent_mapping(em_tree, em, 1);
+			write_unlock(&em_tree->lock);
+			if (ret != -EEXIST) {
+				free_extent_map(em);
+				break;
+			}
+			btrfs_drop_extent_cache(inode, start, end, 0);
+		}
+		if (ret)
+			goto out_reserve;
+
+		ret = btrfs_add_ordered_extent(inode, start, ins.objectid,
+						     cur_alloc_size, ins.offset,
+						     type);
+		if (ret)
+			goto out_reserve;
+
+		op |= PAGE_SET_WRITEBACK | PAGE_CLEAR_DIRTY;
+		extent_clear_unlock_delalloc(inode, start, end,
+					     NULL,
+					     EXTENT_LOCKED | EXTENT_DELALLOC,
+					     op);
+
+		ret = submit_dedup_extent(inode, start, cur_alloc_size,
+					  ins.objectid, 0);
+		if (ret)
+			break;
+
+		num_bytes = 0;
+		alloc_hint = ins.objectid + cur_alloc_size;
+		start += cur_alloc_size;
+		cond_resched();
+	}
+
+out:
+	if (ret && num_bytes > 0)
+		extent_clear_unlock_delalloc(inode,
+			     start, start + num_bytes - 1, NULL,
+			     EXTENT_DELALLOC | EXTENT_LOCKED | EXTENT_DEFRAG,
+			     PAGE_UNLOCK | PAGE_SET_WRITEBACK |
+			     PAGE_END_WRITEBACK | PAGE_CLEAR_DIRTY);
+
+	free_extent_state(cached_state);
+	return ret;
+
+out_reserve:
+	if (found == 0)
+		btrfs_free_reserved_extent(root, ins.objectid, ins.offset, 1);
+	goto out;
+}
+
 
 /*
  * phase two of compressed writeback.  This is the ordered portion
@@ -1526,39 +1636,67 @@ out_unlock:
  */
 static noinline void async_cow_start(struct btrfs_work *work)
 {
-	printk(KERN_INFO " ##### In %s ##### \n", __func__);
-
-	struct async_cow *async_cow;
 	int num_added = 0;
 	int ret = 0;
-	async_cow = container_of(work, struct async_cow, work);
 	u64 hash_num_bytes;
-	u64 blocksize = PAGE_CACHE_SIZE;
+	u64 blocksize;
+	struct async_cow *async_cow;
+	struct btrfs_inode *inode;
+	blocksize = PAGE_CACHE_SIZE;
+
+	async_cow = container_of(work, struct async_cow, work);
+	inode =  BTRFS_I(async_cow->inode);
 
 	if (inode_need_compress(async_cow->inode)) {
-
 		compress_file_range(async_cow->inode, async_cow->locked_page,
 				    async_cow->start, async_cow->end, async_cow,
 				    &num_added);
 	}
 	else {
-		printk(KERN_INFO " #### In %s, end = %llu ####\n", __func__, async_cow -> end);
-
-		hash_num_bytes = ALIGN(i_size_read(async_cow->inode), blocksize);
-
-		ret = run_delalloc_dedup(async_cow->inode,
+		if(inode->root->fs_info->dedup_info && !inode->root->fs_info->cbs_info)
+		{
+			printk(KERN_INFO " ## dedup and no cbs ## In %s ####\n", __func__);
+			ret = run_delalloc_dedup(async_cow->inode,
+				async_cow->locked_page, async_cow->start,
+				async_cow->end, async_cow);
+		}
+		else if(!inode->root->fs_info->dedup_info && inode->root->fs_info->cbs_info)
+		{
+			printk(KERN_INFO " ############# no dedup and cbs ## In %s ####\n", __func__);
+			ret = run_delalloc(async_cow->inode,
 				async_cow->locked_page, async_cow->start,
 				async_cow->end, async_cow);
 
-		if(hash_num_bytes-1 == async_cow->end)
-		{
-			ret = run_delalloc_cbs(async_cow->inode,
-					async_cow->locked_page, async_cow->start,
-					async_cow->end, async_cow);
+			printk(KERN_INFO " ############# no dedup and cbs ## In %s -> %d ####\n", __func__, ret);
+
+			hash_num_bytes = ALIGN(i_size_read(async_cow->inode), blocksize);
+			if(hash_num_bytes-1 == async_cow->end && inode->root->fs_info->cbs_info)
+			{
+				ret = run_delalloc_cbs(async_cow->inode,
+						async_cow->locked_page, async_cow->start,
+						async_cow->end, async_cow);
+				printk(KERN_INFO " ###### ###### no dedup and cbs ## In %s -> %d ####\n", __func__, ret);			
+			}
 		}
-		/* review check if cbs has deduped the complete file. if yes, don't dedup */
+		else
+		{
+			printk(KERN_INFO " ######### dedup and cbs ## In %s ####\n", __func__);
+			ret = run_delalloc_dedup(async_cow->inode,
+				async_cow->locked_page, async_cow->start,
+				async_cow->end, async_cow);
+
+			printk(KERN_INFO " ######### dedup and cbs ## In %s -> %d ####\n", __func__, ret);
+
+			hash_num_bytes = ALIGN(i_size_read(async_cow->inode), blocksize);
+			if(hash_num_bytes-1 == async_cow->end && inode->root->fs_info->cbs_info)
+			{
+				ret = run_delalloc_cbs(async_cow->inode,
+						async_cow->locked_page, async_cow->start,
+						async_cow->end, async_cow);
+				printk(KERN_INFO " ###### ###### dedup and cbs ## In %s -> %d ####\n", __func__, ret);
+			}
+		}
 	}
-	WARN_ON(ret);
 
 	if (num_added == 0) {
 		btrfs_add_delayed_iput(async_cow->inode);
@@ -1606,14 +1744,13 @@ static int cow_file_range_async(struct inode *inode, struct page *locked_page,
 				u64 start, u64 end, int *page_started,
 				unsigned long *nr_written)
 {
-	printk(KERN_INFO " #### In %s, end = %lu ####\n", __func__, end);
-
 	struct async_cow *async_cow;
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	unsigned long nr_pages;
 	u64 cur_end;
 	int limit = 10 * SZ_1M;
 
+	printk(KERN_INFO " #### In %s, end = %llu ####\n", __func__, end);
 	clear_extent_bit(&BTRFS_I(inode)->io_tree, start, end, EXTENT_LOCKED,
 			 1, 0, NULL, GFP_NOFS);
 	while (start < end) {
@@ -2009,30 +2146,23 @@ static int run_delalloc_range(struct inode *inode, struct page *locked_page,
 			      u64 start, u64 end, int *page_started,
 			      unsigned long *nr_written)
 {
-	printk(KERN_INFO " #### In %s, end = %lu ####\n", __func__, end);
-
-
 	int ret;
 	int force_cow = need_force_cow(inode, start, end);
 
 	if (BTRFS_I(inode)->flags & BTRFS_INODE_NODATACOW && !force_cow) {
-		printk(KERN_INFO " ##### BTRFS_INODE_NODATACOW ##### \n", __func__);
-
+		printk(KERN_INFO "#### 1 ####\n");
 		ret = run_delalloc_nocow(inode, locked_page, start, end,
 					 page_started, 1, nr_written);
 	} else if (BTRFS_I(inode)->flags & BTRFS_INODE_PREALLOC && !force_cow) {
-		printk(KERN_INFO " ##### BTRFS_INODE_PREALLOC ##### \n", __func__);
-
+		printk(KERN_INFO "#### 2 ####\n");
 		ret = run_delalloc_nocow(inode, locked_page, start, end,
 					 page_started, 0, nr_written);
-	} else if (!inode_need_compress(inode) && !inode_need_dedup(inode) && !inode_need_cbs(inode)) {
-		printk(KERN_INFO " ##### !inode_need_dedup and !inode_need_cbs ##### \n", __func__);
-
+	} else if (!inode_need_compress(inode) && !( inode_need_dedup(inode) || inode_need_cbs(inode) ) ) { 
+		printk(KERN_INFO "#### 3 ####\n");
 		ret = cow_file_range(inode, locked_page, start, end,
 				      page_started, nr_written, 1);
 	} else {
-		printk(KERN_INFO " ##### BTRFS_INODE_HAS_ASYNC_EXTENT ##### \n", __func__);
-
+		printk(KERN_INFO "#### 4 ####\n");
 		set_bit(BTRFS_INODE_HAS_ASYNC_EXTENT,
 			&BTRFS_I(inode)->runtime_flags);
 		ret = cow_file_range_async(inode, locked_page, start, end,
@@ -2563,13 +2693,6 @@ static int insert_reserved_file_extent(struct btrfs_trans_handle *trans,
 				       u16 other_encoding, int extent_type,
 				       struct btrfs_dedup_hash *hash)
 {
-	printk(KERN_INFO " ##### In %s ##### \n", __func__);
-
-	if(!hash)
-	{
-		printk(KERN_INFO " ###### hash is NULL \n ####");
-	}
-
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	struct btrfs_file_extent_item *fi;
 	struct btrfs_path *path;
@@ -3528,8 +3651,6 @@ out:
 
 static void finish_ordered_fn(struct btrfs_work *work)
 {
-	printk(KERN_INFO " ##### In %s ##### \n", __func__);
-
 	struct btrfs_ordered_extent *ordered_extent;
 	ordered_extent = container_of(work, struct btrfs_ordered_extent, work);
 	btrfs_finish_ordered_io(ordered_extent);
@@ -3538,9 +3659,6 @@ static void finish_ordered_fn(struct btrfs_work *work)
 static int btrfs_writepage_end_io_hook(struct page *page, u64 start, u64 end,
 				struct extent_state *state, int uptodate)
 {
-	//printk(KERN_INFO " ##### In %s ##### \n", __func__);
-
-
 	struct inode *inode = page->mapping->host;
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	struct btrfs_ordered_extent *ordered_extent = NULL;
@@ -4457,6 +4575,7 @@ static int __btrfs_unlink_inode(struct btrfs_trans_handle *trans,
 	u64 ino = btrfs_ino(inode);
 	u64 dir_ino = btrfs_ino(dir);
 
+	printk (KERN_INFO "#### In %s ####\n", __func__);
 	path = btrfs_alloc_path();
 	if (!path) {
 		ret = -ENOMEM;
@@ -4464,8 +4583,19 @@ static int __btrfs_unlink_inode(struct btrfs_trans_handle *trans,
 	}
 
 	path->leave_spinning = 1;
-	di = btrfs_lookup_dir_item(trans, root, path, dir_ino,
-				    name, name_len, -1);
+	if(!root->fs_info->cbs_info)
+	{
+		printk(KERN_ERR "##### In %s : Not the CBS way #####\n", __func__);
+		di = btrfs_lookup_dir_item(trans, root, path, dir_ino,
+					    name, name_len, -1);
+	}
+	else
+	{
+		printk(KERN_ERR "##### In %s : Deleting the CBS way #####\n", __func__);
+		di = btrfs_lookup_dir_item_cbs(trans, root, path, dir_ino,
+					    name, name_len, -1, inode->i_ino);
+	}
+
 	if (IS_ERR(di)) {
 		ret = PTR_ERR(di);
 		goto err;
@@ -4578,21 +4708,41 @@ static struct btrfs_trans_handle *__unlink_start_trans(struct inode *dir)
 	return btrfs_start_transaction_fallback_global_rsv(root, 5, 5);
 }
 
-static int btrfs_unlink(struct inode *dir, struct dentry *dentry)
+static int __btrfs_unlink(struct inode *dir, struct dentry *dentry, struct inode *cbs_inode)
 {
+	struct inode *inode;
 	struct btrfs_root *root = BTRFS_I(dir)->root;
 	struct btrfs_trans_handle *trans;
-	struct inode *inode = d_inode(dentry);
+	u8 hash[32];
 	int ret;
+
+	if(!cbs_inode)
+		inode = d_inode(dentry);
+	else {
+		printk(KERN_ERR "##### In %s : Deleting inode_no %lu from parent dir %lu. #####\n", __func__, cbs_inode->i_ino, dir->i_ino);
+		inode = cbs_inode;
+	}
+
 
 	trans = __unlink_start_trans(dir);
 	if (IS_ERR(trans))
 		return PTR_ERR(trans);
 
-	btrfs_record_unlink_dir(trans, dir, d_inode(dentry), 0);
+	btrfs_record_unlink_dir(trans, dir, inode, 0);
 
-	ret = btrfs_unlink_inode(trans, root, dir, d_inode(dentry),
+	if(!cbs_inode)
+	{
+		printk(KERN_ERR "##### In %s : Not the CBS way. %s #####\n", __func__, dentry->d_name.name);
+		ret = btrfs_unlink_inode(trans, root, dir, inode,
 				 dentry->d_name.name, dentry->d_name.len);
+	}
+	else
+	{
+		printk(KERN_ERR "##### In %s : Deleting the CBS way #####\n", __func__);
+		ret = btrfs_unlink_inode(trans, root, dir, inode,
+				 "fakename", 8);
+	}
+
 	if (ret)
 		goto out;
 
@@ -4604,8 +4754,23 @@ static int btrfs_unlink(struct inode *dir, struct dentry *dentry)
 
 out:
 	btrfs_end_transaction(trans, root);
+	if(dentry && root->fs_info->cbs_info)
+	{
+		trans = __unlink_start_trans(dir);
+		if (IS_ERR(trans))
+			return PTR_ERR(trans);
+
+		prepare_hash(dentry->d_name.name, hash);
+		btrfs_cbs_del(trans, root, hash);
+		btrfs_end_transaction(trans, root);
+	}
 	btrfs_btree_balance_dirty(root);
 	return ret;
+}
+
+static int btrfs_unlink(struct inode *dir, struct dentry *dentry)
+{
+	return __btrfs_unlink(dir, dentry, NULL);
 }
 
 int btrfs_unlink_subvol(struct btrfs_trans_handle *trans,
@@ -4621,6 +4786,7 @@ int btrfs_unlink_subvol(struct btrfs_trans_handle *trans,
 	int ret;
 	u64 dir_ino = btrfs_ino(dir);
 
+	printk (KERN_INFO "#### In %s ####\n", __func__);
 	path = btrfs_alloc_path();
 	if (!path)
 		return -ENOMEM;
@@ -4874,7 +5040,6 @@ search_again:
 			goto error;
 		}
 	}
-
 
 	path->leave_spinning = 1;
 	ret = btrfs_search_slot(trans, root, &key, path, -1, 1);
@@ -5835,23 +6000,33 @@ static int btrfs_inode_by_name(struct inode *dir, struct dentry *dentry,
 {
 	const char *name = dentry->d_name.name;
 	int namelen = dentry->d_name.len;
-	struct btrfs_dir_item *di;
+	u8 hash[32];
+	struct btrfs_dir_item *di=NULL;
 	struct btrfs_path *path;
 	struct btrfs_root *root = BTRFS_I(dir)->root;
 	int ret = 0;
 	unsigned long inode_no = 0;
 	
-	//printk(KERN_ERR " ##### In %s : calling prepare_hash. name = %s. name_len = %d ##### \n", __func__, name, namelen);
-
+	printk (KERN_INFO "#### In %s ####\n", __func__);
 	path = btrfs_alloc_path();
 	if (!path)
 		return -ENOMEM;
 
-	if(root->fs_info->cbs_info && namelen > 60){
-		inode_no = prepare_hash(dir, name);
-		printk(KERN_ERR "##### In %s : Calling btrfs_lookup_dir_item_cbs #####\n", __func__);
-		di = btrfs_lookup_dir_item_cbs(NULL, root, path, btrfs_ino(dir), name,
-					    namelen, 0, inode_no);
+	printk(KERN_ERR "##### In %s : namelen = %d #####\n", __func__, namelen);
+	if(root->fs_info->cbs_info && namelen == 64){
+		ret = prepare_hash(name, hash);
+		inode_no = btrfs_cbs_search(dir, hash);
+
+		printk(KERN_INFO "##### In %s : inode_no = %lu #####\n", __func__, inode_no);
+		if(inode_no>2)
+		{	
+			location->objectid = inode_no;
+			location->type = BTRFS_INODE_ITEM_KEY;
+			location->offset = 0;
+			goto out;
+		}
+		else
+			goto out_err;
 	}
 	else
 		di = btrfs_lookup_dir_item(NULL, root, path, btrfs_ino(dir), name,
@@ -6150,6 +6325,7 @@ static struct inode *new_simple_dir(struct super_block *s,
 	return inode;
 }
 
+/* review -> remove printks */
 struct inode *btrfs_lookup_dentry(struct inode *dir, struct dentry *dentry)
 {
 	struct inode *inode;
@@ -6159,17 +6335,24 @@ struct inode *btrfs_lookup_dentry(struct inode *dir, struct dentry *dentry)
 	int index;
 	int ret = 0;
 
+	printk (KERN_INFO "#### In %s ####\n", __func__);
 	if (dentry->d_name.len > BTRFS_NAME_LEN)
 		return ERR_PTR(-ENAMETOOLONG);
 
 	ret = btrfs_inode_by_name(dir, dentry, &location);
-	if (ret < 0)
-		return ERR_PTR(ret);
 
-	if (location.objectid == 0)
+	if (ret < 0){
+		printk (KERN_INFO "#### In %s : btrfs_inode_by_name ret < 0 ####\n", __func__);
+		return ERR_PTR(ret);
+	}
+
+	if (location.objectid == 0){
+		printk (KERN_INFO "#### In %s : location.objectid == 0 ret < 0 ####\n", __func__);
 		return ERR_PTR(-ENOENT);
+	}
 
 	if (location.type == BTRFS_INODE_ITEM_KEY) {
+		printk (KERN_INFO "#### In %s : location.type == BTRFS_INODE_ITEM_KEY ####\n", __func__);
 		inode = btrfs_iget(dir->i_sb, &location, root, NULL);
 		return inode;
 	}
@@ -6180,21 +6363,29 @@ struct inode *btrfs_lookup_dentry(struct inode *dir, struct dentry *dentry)
 	ret = fixup_tree_root_location(root, dir, dentry,
 				       &location, &sub_root);
 	if (ret < 0) {
-		if (ret != -ENOENT)
+		printk (KERN_INFO "#### In %s : fixup_tree_root_location (ret < 0) ####\n", __func__);
+		if (ret != -ENOENT){
+			printk (KERN_INFO "#### In %s : if (ret != -ENOENT) ####\n", __func__);
 			inode = ERR_PTR(ret);
-		else
+		}
+		else{
+			printk (KERN_INFO "#### In %s : else of if(ret != -ENOENT) ####\n", __func__);
 			inode = new_simple_dir(dir->i_sb, &location, sub_root);
+		}
 	} else {
+		printk (KERN_INFO "#### In %s : fixup_tree_root_location if(ret < 0) cha else ####\n", __func__);
 		inode = btrfs_iget(dir->i_sb, &location, sub_root, NULL);
 	}
 	srcu_read_unlock(&root->fs_info->subvol_srcu, index);
 
 	if (!IS_ERR(inode) && root != sub_root) {
+		printk (KERN_INFO "#### In %s : if (!IS_ERR(inode) && root != sub_root) ####\n", __func__);
 		down_read(&root->fs_info->cleanup_work_sem);
 		if (!(inode->i_sb->s_flags & MS_RDONLY))
 			ret = btrfs_orphan_cleanup(sub_root);
 		up_read(&root->fs_info->cleanup_work_sem);
 		if (ret) {
+			printk (KERN_INFO "#### In %s : if(ret) ####\n", __func__);
 			iput(inode);
 			inode = ERR_PTR(ret);
 		}
@@ -6605,6 +6796,7 @@ static int btrfs_insert_inode_locked(struct inode *inode)
 		   btrfs_find_actor, &args);
 }
 
+/* review */
 static struct inode *btrfs_new_inode(struct btrfs_trans_handle *trans,
 				     struct btrfs_root *root,
 				     struct inode *dir,
@@ -6793,6 +6985,8 @@ int btrfs_add_link(struct btrfs_trans_handle *trans,
 	u64 ino = btrfs_ino(inode);
 	u64 parent_ino = btrfs_ino(parent_inode);
 
+	printk(KERN_INFO "\n********* In %s ********** ", __func__	);
+
 	if (unlikely(ino == BTRFS_FIRST_FREE_OBJECTID)) {
 		memcpy(&key, &BTRFS_I(inode)->root->root_key, sizeof(key));
 	} else {
@@ -6817,7 +7011,8 @@ int btrfs_add_link(struct btrfs_trans_handle *trans,
 	ret = btrfs_insert_dir_item(trans, root, name, name_len,
 				    parent_inode, &key,
 				    btrfs_inode_type(inode), index);
-	if (ret == -EEXIST || ret == -EOVERFLOW)
+	printk(KERN_INFO "\n********* In %s : err = %d ********** ", __func__, ret);
+		if (ret == -EEXIST || ret == -EOVERFLOW)
 		goto fail_dir_item;
 	else if (ret) {
 		btrfs_abort_transaction(trans, root, ret);
@@ -6858,6 +7053,7 @@ static int btrfs_add_nondir(struct btrfs_trans_handle *trans,
 	int err = btrfs_add_link(trans, dir, inode,
 				 dentry->d_name.name, dentry->d_name.len,
 				 backref, index);
+	printk(KERN_INFO "\n********* In %s : err = %d ********** ", __func__, err);
 	if (err > 0)
 		err = -EEXIST;
 	return err;
@@ -6874,6 +7070,7 @@ static int btrfs_mknod(struct inode *dir, struct dentry *dentry,
 	u64 objectid;
 	u64 index = 0;
 
+	printk(KERN_INFO "@@@@@@@@@@ In %s @@@@@@@@@\n", __func__);
 	/*
 	 * 2 for inode item and ref
 	 * 2 for dir items
@@ -6944,6 +7141,8 @@ static int btrfs_create(struct inode *dir, struct dentry *dentry,
 	int err;
 	u64 objectid;
 	u64 index = 0;
+
+	printk(KERN_INFO "@@@@@@@@@@ In %s @@@@@@@@@\n", __func__);
 
 	/*
 	 * 2 for inode item and ref
@@ -7018,6 +7217,7 @@ static int btrfs_link(struct dentry *old_dentry, struct inode *dir,
 	int err;
 	int drop_inode = 0;
 
+	printk(KERN_INFO "@@@@@@@@@@ In %s @@@@@@@@@\n", __func__);
 	/* do not allow sys_link's with other subvols of the same device */
 	if (root->objectid != BTRFS_I(inode)->root->objectid)
 		return -EXDEV;
@@ -7130,6 +7330,7 @@ static int btrfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 
 	err = btrfs_add_link(trans, dir, inode, dentry->d_name.name,
 			     dentry->d_name.len, 0, index);
+	printk(KERN_INFO "\n********* In %s : err = %d ********** ", __func__, err);
 	if (err)
 		goto out_fail_inode;
 
@@ -9114,8 +9315,6 @@ static int btrfs_writepage(struct page *page, struct writeback_control *wbc)
 static int btrfs_writepages(struct address_space *mapping,
 			    struct writeback_control *wbc)
 {
-	printk(KERN_INFO " ##### In %s ##### \n", __func__);
-
 	struct extent_io_tree *tree;
 
 	tree = &BTRFS_I(mapping->host)->io_tree;
@@ -9939,6 +10138,7 @@ static int btrfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 	ret = btrfs_add_link(trans, new_dir, old_inode,
 			     new_dentry->d_name.name,
 			     new_dentry->d_name.len, 0, index);
+	printk(KERN_INFO "\n********* In %s : err = %d ********** ", __func__, ret);
 	if (ret) {
 		btrfs_abort_transaction(trans, root, ret);
 		goto out_fail;
@@ -10298,9 +10498,6 @@ static int __btrfs_prealloc_file_range(struct inode *inode, int mode,
 				       loff_t actual_len, u64 *alloc_hint,
 				       struct btrfs_trans_handle *trans)
 {
-
-	printk(KERN_INFO " ##### In %s ##### \n", __func__);
-
 	struct extent_map_tree *em_tree = &BTRFS_I(inode)->extent_tree;
 	struct extent_map *em;
 	struct btrfs_root *root = BTRFS_I(inode)->root;
