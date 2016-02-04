@@ -1636,15 +1636,16 @@ out_unlock:
  */
 static noinline void async_cow_start(struct btrfs_work *work)
 {
-	struct async_cow *async_cow;
 	int num_added = 0;
 	int ret = 0;
 	u64 hash_num_bytes;
 	u64 blocksize;
+	struct async_cow *async_cow;
+	struct btrfs_inode *inode;
 	blocksize = PAGE_CACHE_SIZE;
-	async_cow = container_of(work, struct async_cow, work);
 
-	struct btrfs_inode *inode = BTRFS_I(async_cow->inode);
+	async_cow = container_of(work, struct async_cow, work);
+	inode =  BTRFS_I(async_cow->inode);
 
 	if (inode_need_compress(async_cow->inode)) {
 		compress_file_range(async_cow->inode, async_cow->locked_page,
@@ -6984,6 +6985,8 @@ int btrfs_add_link(struct btrfs_trans_handle *trans,
 	u64 ino = btrfs_ino(inode);
 	u64 parent_ino = btrfs_ino(parent_inode);
 
+	printk(KERN_INFO "\n********* In %s ********** ", __func__	);
+
 	if (unlikely(ino == BTRFS_FIRST_FREE_OBJECTID)) {
 		memcpy(&key, &BTRFS_I(inode)->root->root_key, sizeof(key));
 	} else {
@@ -7008,7 +7011,8 @@ int btrfs_add_link(struct btrfs_trans_handle *trans,
 	ret = btrfs_insert_dir_item(trans, root, name, name_len,
 				    parent_inode, &key,
 				    btrfs_inode_type(inode), index);
-	if (ret == -EEXIST || ret == -EOVERFLOW)
+	printk(KERN_INFO "\n********* In %s : err = %d ********** ", __func__, ret);
+		if (ret == -EEXIST || ret == -EOVERFLOW)
 		goto fail_dir_item;
 	else if (ret) {
 		btrfs_abort_transaction(trans, root, ret);
@@ -7049,6 +7053,7 @@ static int btrfs_add_nondir(struct btrfs_trans_handle *trans,
 	int err = btrfs_add_link(trans, dir, inode,
 				 dentry->d_name.name, dentry->d_name.len,
 				 backref, index);
+	printk(KERN_INFO "\n********* In %s : err = %d ********** ", __func__, err);
 	if (err > 0)
 		err = -EEXIST;
 	return err;
@@ -7325,6 +7330,7 @@ static int btrfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 
 	err = btrfs_add_link(trans, dir, inode, dentry->d_name.name,
 			     dentry->d_name.len, 0, index);
+	printk(KERN_INFO "\n********* In %s : err = %d ********** ", __func__, err);
 	if (err)
 		goto out_fail_inode;
 
@@ -10132,6 +10138,7 @@ static int btrfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 	ret = btrfs_add_link(trans, new_dir, old_inode,
 			     new_dentry->d_name.name,
 			     new_dentry->d_name.len, 0, index);
+	printk(KERN_INFO "\n********* In %s : err = %d ********** ", __func__, ret);
 	if (ret) {
 		btrfs_abort_transaction(trans, root, ret);
 		goto out_fail;

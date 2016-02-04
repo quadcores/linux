@@ -45,14 +45,20 @@ static struct btrfs_dir_item *insert_with_overflow(struct btrfs_trans_handle
 	struct extent_buffer *leaf;
 
 	ret = btrfs_insert_empty_item(trans, root, path, cpu_key, data_size);
+	printk(KERN_INFO "\n********* In %s : btrfs_insert_empty_item ret = %d ********** ", __func__, ret);
 	if (ret == -EEXIST) {
 		struct btrfs_dir_item *di;
 		di = btrfs_match_dir_item_name(root, path, name, name_len);
-		if (di)
+		if (di) {
+			printk(KERN_INFO "\n********* In %s : if(di) ret = %d ********** ", __func__, ret);
 			return ERR_PTR(-EEXIST);
+		}
 		btrfs_extend_item(root, path, data_size);
 	} else if (ret < 0)
+	{
+		printk(KERN_INFO "\n********* In %s : ret < 0. ret = %d ********** ", __func__, ret);
 		return ERR_PTR(ret);
+	}
 	WARN_ON(ret > 0);
 	leaf = path->nodes[0];
 	item = btrfs_item_nr(path->slots[0]);
@@ -138,8 +144,10 @@ int btrfs_insert_dir_item(struct btrfs_trans_handle *trans, struct btrfs_root
 	key.offset = btrfs_name_hash(name, name_len);
 
 	path = btrfs_alloc_path();
-	if (!path)
+	if (!path){
+		printk(KERN_INFO "\n********* In %s : btrfs_alloc_path failed. ENOMEM = %d ********** ", __func__, -ENOMEM);
 		return -ENOMEM;
+	}
 	path->leave_spinning = 1;
 
 	btrfs_cpu_key_to_disk(&disk_key, location);
@@ -182,9 +190,15 @@ second_insert:
 out_free:
 	btrfs_free_path(path);
 	if (ret)
+	{
+		printk(KERN_INFO "\n********* In %s : Inside if(ret). ret = %d ********** ", __func__, ret);
 		return ret;
+	}
 	if (ret2)
+	{
+		printk(KERN_INFO "\n********* In %s : Inside if(ret2). ret2 = %d ********** ", __func__, ret2);
 		return ret2;
+	}
 	return 0;
 }
 
@@ -262,14 +276,14 @@ static struct btrfs_dir_item *__btrfs_lookup_dir_item(struct btrfs_trans_handle 
 	int cow = mod != 0;
 	struct btrfs_cbs_info *cbs_info = root->fs_info->cbs_info;
 
-	printk(KERN_ERR " ##### In %s : dir = %llu. inode_no = %lu. name = %s. ##### \n", __func__, dir, inode_no, name);
+	//printk(KERN_ERR " ##### In %s : dir = %llu. inode_no = %lu. name = %s. ##### \n", __func__, dir, inode_no, name);
 
 	key.objectid = dir;
 	key.type = BTRFS_DIR_ITEM_KEY;
 	key.offset = btrfs_name_hash(name, name_len);
 
 	ret = btrfs_search_slot(trans, root, &key, path, ins_len, cow);
-	printk(KERN_ERR " ##### In %s : ret = %d ##### \n", __func__, ret);
+	//printk(KERN_ERR " ##### In %s : ret = %d ##### \n", __func__, ret);
 
 	if (ret < 0)
 		return ERR_PTR(ret);
@@ -280,12 +294,6 @@ static struct btrfs_dir_item *__btrfs_lookup_dir_item(struct btrfs_trans_handle 
 		return btrfs_match_dir_item_name(root, path, name, name_len);
 	}
 	else {
-		/*printk(KERN_INFO " ##### In %s: in cbs part ##### \n", __func__);
-		leaf = path->nodes[0];
-		dir_item = btrfs_item_ptr(leaf, path->slots[0], struct btrfs_dir_item);
-		if (verify_dir_item(root, leaf, dir_item))
-			return NULL;
-		return dir_item;*/
 		return __btrfs_match_dir_item_name(root, path, name, name_len, inode_no);
 	}
 }
