@@ -25,9 +25,6 @@
 
 static int init_cbs_info(struct btrfs_fs_info *fs_info, u16 type)
 {
-
-	printk(KERN_INFO "# # # # In %s # # # # \n",__func__);
-
 	struct btrfs_cbs_info *cbs_info;
 	int ret;
 
@@ -65,7 +62,6 @@ int btrfs_cbs_enable(struct btrfs_fs_info *fs_info, u16 type)
 	u64 compat_ro_flag;
 	int ret = 0;
 
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 	btrfs_set_fs_compat_ro(fs_info, CBS);
 	compat_ro_flag = btrfs_super_compat_ro_flags(fs_info->super_copy);
 
@@ -74,13 +70,11 @@ int btrfs_cbs_enable(struct btrfs_fs_info *fs_info, u16 type)
 		return -EINVAL;
 
 	if (fs_info->cbs_info) {
-		printk(KERN_ERR " IF # # # # # In %s ##### \n", __func__);
 		cbs_info = fs_info->cbs_info;
 
 		/* Check if we re-enable for different cbs config */
 		if (cbs_info->hash_type != type)
 		{
-			printk(KERN_ERR " IF IF # # # # # In %s ##### \n", __func__);
 			btrfs_cbs_disable(fs_info);
 			goto enable;
 		}
@@ -149,8 +143,6 @@ out:
 		fs_info->cbs_info = NULL;
 	}
 
-	printk(KERN_ERR " ##### Exiting %s ##### \n", __func__);
-
 	return ret;
 }
 
@@ -163,7 +155,9 @@ int btrfs_cbs_resume(struct btrfs_fs_info *fs_info,
 	u16 type;
 	int ret = 0;
 
-	printk(KERN_INFO "# # # # In %s # # # # \n",__func__);
+	printk(KERN_INFO "_________________________________________________________________________________________________________________________\n|");
+	printk(KERN_INFO "|\n| Resuming last CBS configuration 				|\n");
+	printk(KERN_INFO "|________________________________________________________________________________________________________________________\n");
 
 	path = btrfs_alloc_path();
 	if (!path)
@@ -195,21 +189,17 @@ out:
 	return ret;
 }
 
-static unsigned long ondisk_search_hash(struct btrfs_cbs_info *cbs_info, u8 *hash, struct btrfs_path *path);
+static unsigned long ondisk_search_hash(struct btrfs_cbs_info *cbs_info, struct btrfs_cbs_hash *hash, struct btrfs_path *path);
 static unsigned long ondisk_search_hash_del(struct btrfs_trans_handle *trans, struct btrfs_cbs_info *cbs_info, u8 *hash, struct btrfs_path *path);
 
 int btrfs_cbs_cleanup(struct btrfs_fs_info *fs_info)
 {
 
-	printk(KERN_INFO "# # # # In %s # # # # \n",__func__);
-
 	if (!fs_info->cbs_info){
-		printk(KERN_INFO "# # # # In %s 1 # # # # \n",__func__);
 		return 0;
 	}
 	
 	if (fs_info->cbs_info->cbs_root) {
-		printk(KERN_INFO "# # # # In %s 2 # # # # \n",__func__);
 		free_root_extent_buffers(fs_info->cbs_info->cbs_root);
 		kfree(fs_info->cbs_info->cbs_root);
 	}
@@ -230,14 +220,13 @@ static int ondisk_add(struct btrfs_trans_handle *trans,
 	int ret = 0;
 	unsigned long inode_no;
 
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 	mutex_lock(&cbs_info->lock);
 
 	temp_path = btrfs_alloc_path();
 	if (!temp_path)
 		return -ENOMEM;
 
-	inode_no = ondisk_search_hash(cbs_info, hash->hash, temp_path);
+	inode_no = ondisk_search_hash(cbs_info, hash, temp_path);
 	btrfs_free_path(temp_path);
 
 	path = btrfs_alloc_path();
@@ -246,26 +235,25 @@ static int ondisk_add(struct btrfs_trans_handle *trans,
 
 	if (inode_no == 0) {
 		ret = -1;
-		printk(KERN_INFO " ##### In %s : ERROR in searching hash on-disk ##### \n", __func__);
+		printk(KERN_INFO "| In %s : Error in searching hash on-disk \n", __func__);
 		goto out;
 	}
 	/* Same hash found, don't re-add to save cbs tree space */
 	if (inode_no > 1) {
-		printk(KERN_INFO " ##### In %s : Hash found on-disk ##### \n", __func__);
 		ret = 1;
 		goto out;
 	}
 
-	printk(KERN_INFO " ##### In %s : Inserting as ondisk_search_hash returns == %lu ##### \n", __func__, inode_no);
 	/* Insert hash->bytenr item */
 	memcpy(&key.objectid, hash->hash + hash_len - 8, 8);
 	key.type = BTRFS_CBS_HASH_ITEM_KEY;
 	key.offset = 0;
 
+	// ret = btrfs_insert_empty_item(trans, cbs_root, path, &key,
+	// 		sizeof(*hash_item) + hash_len + hash->name_len);
 
 	ret = btrfs_insert_empty_item(trans, cbs_root, path, &key,
-			sizeof(*hash_item) + hash_len);
-
+			sizeof(*hash_item) + hash_len + hash->name_len);
 
 	//WARN_ON(ret == -EEXIST);
 
@@ -275,9 +263,12 @@ static int ondisk_add(struct btrfs_trans_handle *trans,
 				   struct btrfs_cbs_hash_item);
 	btrfs_set_cbs_hash_len(path->nodes[0], hash_item, hash->num_bytes);
 	btrfs_set_cbs_inode_no(path->nodes[0], hash_item, hash->inode_no);
+	btrfs_set_cbs_name_len(path->nodes[0], hash_item, hash->name_len);
 
 	write_extent_buffer(path->nodes[0], hash->hash,
-			    (unsigned long)(hash_item + 1), hash_len);
+	 		    (unsigned long)(hash_item + 1), hash_len);
+	write_extent_buffer(path->nodes[0], hash->file_name,
+			    (unsigned long)(hash_item + 1) + hash_len, hash->name_len);
 	btrfs_mark_buffer_dirty(path->nodes[0]);
 
 out:
@@ -307,7 +298,6 @@ static int ondisk_del(struct btrfs_trans_handle *trans,
 	struct btrfs_path *path;
 	int ret = 0;
 
-	printk(KERN_INFO " ##### In %s ##### \n", __func__);
 	path = btrfs_alloc_path();
 	if (!path)
 		return -ENOMEM;
@@ -324,6 +314,8 @@ static int ondisk_del(struct btrfs_trans_handle *trans,
 	if (ret == 1)
 		goto out;
 
+	printk(KERN_INFO "| Deleting item from hash vs inode tree b+tree (CBS Tree) \n");
+	printk(KERN_INFO "|________________________________________________________________________________________________________________________\n\n");
 	btrfs_del_item(trans, cbs_root, path);
 
 out:
@@ -356,7 +348,6 @@ int btrfs_cbs_disable(struct btrfs_fs_info *fs_info)
 	struct btrfs_cbs_info *cbs_info = fs_info->cbs_info;
 	int ret = 0;
 
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 	if (!cbs_info)
 		return 0;
 
@@ -374,9 +365,8 @@ int btrfs_cbs_disable(struct btrfs_fs_info *fs_info)
  * Return inode_no for found
  * Return 1 for not found
  */
-static unsigned long ondisk_search_hash(struct btrfs_cbs_info *cbs_info, u8 *hash, struct btrfs_path *path)
+static unsigned long ondisk_search_hash(struct btrfs_cbs_info *cbs_info, struct btrfs_cbs_hash *hash, struct btrfs_path *path)
 {
-
 	struct btrfs_key key;
 	struct btrfs_root *cbs_root = cbs_info->cbs_root;
 	u8 *buf = NULL;
@@ -385,17 +375,16 @@ static unsigned long ondisk_search_hash(struct btrfs_cbs_info *cbs_info, u8 *has
 	int ret;
 	unsigned long inode_no;
 
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 	buf = kmalloc(hash_len, GFP_NOFS);
 	if (!buf) {
 		ret = 0;
 		goto out;
 	}
 
-	memcpy(&hash_key, hash + hash_len - 8, 8);
+	memcpy(&hash_key, hash->hash + hash_len - 8, 8);
 	key.objectid = hash_key;
 	key.type = BTRFS_CBS_HASH_ITEM_KEY;
-	key.offset = (u64)-1;	// doubtful
+	key.offset = (u64)-1;
 
 	ret = btrfs_search_slot(NULL, cbs_root, &key, path, 0, 0);
 	if (ret < 0)
@@ -425,15 +414,19 @@ static unsigned long ondisk_search_hash(struct btrfs_cbs_info *cbs_info, u8 *has
 		btrfs_item_key_to_cpu(node, &key, slot);
 
 		if (key.type != BTRFS_CBS_HASH_ITEM_KEY ||
-		    memcmp(&key.objectid, hash + hash_len - 8, 8))
+		    memcmp(&key.objectid, hash->hash + hash_len - 8, 8))
 			break;
 		hash_item = btrfs_item_ptr(node, slot,
 				struct btrfs_cbs_hash_item);
 	
-		read_extent_buffer(node, buf, (unsigned long)(hash_item + 1),
-				   hash_len);
-		if (!memcmp(buf, hash, hash_len)) {
+		read_extent_buffer(node, buf, (unsigned long)(hash_item + 1), hash_len);
+		if (!memcmp(buf, hash->hash, hash_len)) {
 			inode_no = btrfs_cbs_inode_no(node, hash_item);
+			hash->name_len = btrfs_cbs_name_len(node, hash_item);
+			hash->file_name = kmalloc((hash->name_len)+1, GFP_NOFS);
+			read_extent_buffer(node, hash->file_name, (unsigned long)(hash_item + 1) + hash_len, hash->name_len);
+			hash->file_name[hash->name_len] = '\0';
+
 			ret = inode_no;
 			break;
 		}
@@ -451,7 +444,6 @@ out:
  */
 static unsigned long ondisk_search_hash_del(struct btrfs_trans_handle *trans, struct btrfs_cbs_info *cbs_info, u8 *hash, struct btrfs_path *path)
 {
-
 	struct btrfs_key key;
 	struct btrfs_root *cbs_root = cbs_info->cbs_root;
 	u8 *buf = NULL;
@@ -460,7 +452,7 @@ static unsigned long ondisk_search_hash_del(struct btrfs_trans_handle *trans, st
 	int ret;
 	unsigned long inode_no;
 
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
+	printk(KERN_INFO "| Searching hash for deleting hash vs inode entry \n");
 	buf = kmalloc(hash_len, GFP_NOFS);
 	if (!buf) {
 		ret = 0;
@@ -520,7 +512,7 @@ out:
 
 
 /* review */
-static unsigned long generic_search(struct inode *inode, u8 *hash)
+static unsigned long generic_search(struct inode *inode, struct btrfs_cbs_hash *hash)
 {
 	unsigned long inode_no = 0;
 	struct btrfs_root *root = BTRFS_I(inode)->root;
@@ -528,7 +520,6 @@ static unsigned long generic_search(struct inode *inode, u8 *hash)
 	struct btrfs_cbs_info *cbs_info = fs_info->cbs_info;
 	struct btrfs_path *path;	
 
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 	mutex_lock(&cbs_info->lock);
 
 	path = btrfs_alloc_path();
@@ -543,21 +534,16 @@ static unsigned long generic_search(struct inode *inode, u8 *hash)
 	return inode_no;
 }
 
-unsigned long btrfs_cbs_search(struct inode *inode, u8* hash)
+unsigned long btrfs_cbs_search(struct inode *inode, struct btrfs_cbs_hash *hash)
 {
 	struct btrfs_fs_info *fs_info = BTRFS_I(inode)->root->fs_info;
 	struct btrfs_cbs_info *cbs_info = fs_info->cbs_info;
 	unsigned long inode_no = 0;
 
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 	if (WARN_ON(!cbs_info || !hash))
 		return 0;
 
 	inode_no = generic_search(inode, hash);
-	/*	if (ret == 0) {
-			hash->num_bytes = 0;			
-			hash->bytenr = 0;
-	}*/
 
 	return inode_no;
 }
@@ -592,7 +578,6 @@ int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
 	u64 len;
 	u64 sectorsize = root->sectorsize;
 
-	printk(KERN_ERR " ##### In %s ##### \n", __func__);
 	if (!cbs_info || !hash)
 		return 0;
 
@@ -601,7 +586,7 @@ int btrfs_cbs_calc_hash(struct btrfs_root *root, struct inode *inode,
 	len = end-start+1;
 	data = vmalloc(len);
 	if (!data) {
-		printk(KERN_INFO "%s : vmalloc failed #####_______ \n", __func__);
+		printk(KERN_INFO "| %s : vmalloc failed 									|\n", __func__);
 		return -ENOMEM;
 	}
 	for (i = 0; sectorsize * i < len; i++) {
@@ -676,7 +661,6 @@ unsigned long prepare_hash(const char* name, u8 hash[32])
     int i = 0, j = 0;
     u8 msb, lsb;
 
-	printk(KERN_INFO " ##### In %s : name  = %s ##### \n", __func__, name);
 	i=0;
     while(i<64)
     {
@@ -703,4 +687,21 @@ unsigned long prepare_hash(const char* name, u8 hash[32])
     }
 
 	return 0;
+}
+
+void btrfs_cbs_set_name(char *name, int len)
+{
+	file_name_cbs.name = kmalloc(GFP_NOFS, sizeof(*name));
+	file_name_cbs.name = name;
+	file_name_cbs.len = len;
+}
+
+char *btrfs_cbs_get_name()
+{
+	return file_name_cbs.name;
+}
+
+int btrfs_cbs_get_len()
+{
+	return file_name_cbs.len;
 }

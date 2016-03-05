@@ -41,6 +41,7 @@
 #include "locking.h"
 #include "volumes.h"
 #include "qgroup.h"
+#include "cbs.h"
 
 static struct kmem_cache *btrfs_inode_defrag_cachep;
 /*
@@ -1833,6 +1834,9 @@ static ssize_t btrfs_file_write_iter(struct kiocb *iocb,
 	BTRFS_I(inode)->last_sub_trans = root->log_transid;
 	spin_unlock(&BTRFS_I(inode)->lock);
 	if (num_written > 0) {
+		/*printk(KERN_INFO "In %s : echo should be here. %s is the file \n", __func__, file->f_path.dentry->d_name.name);*/
+
+		btrfs_cbs_set_name(file->f_path.dentry->d_name.name,file->f_path.dentry->d_name.len);	
 		err = generic_write_sync(file, pos, num_written);
 		if (err < 0)
 			num_written = err;

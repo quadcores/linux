@@ -41,7 +41,9 @@ struct btrfs_cbs_hash {
 	u64 bytenr;
 	u32 num_bytes;
 	u64 inode_no;
+	__le16 name_len;
 	/* last field is a variable length array of cbs hash */
+	char *file_name;
 	u8 hash[];
 };
 
@@ -126,7 +128,7 @@ unsigned long prepare_hash(const char* name, u8 hash[32]);
  *
  * Only on-disk backedn may return error though.
  */
-unsigned long btrfs_cbs_search(struct inode *inode, u8 *hash);
+unsigned long btrfs_cbs_search(struct inode *inode, struct btrfs_cbs_hash *hash);
 
 /* Add a cbs hash into cbs info */
 int btrfs_cbs_add(struct btrfs_trans_handle *trans, struct btrfs_root *root,
@@ -135,4 +137,18 @@ int btrfs_cbs_add(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 /* Remove a cbs hash from cbs info */
 int btrfs_cbs_del(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 		    u8 *hash);
+
+
+struct btrfs_file_name {
+	char* name;
+	int len;
+}__attribute__ ((__packed__));
+
+static struct btrfs_file_name file_name_cbs;
+
+void btrfs_cbs_set_name(char *name, int len);
+char *btrfs_cbs_get_name(void);
+int btrfs_cbs_get_len(void);
+
+
 #endif

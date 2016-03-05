@@ -3287,20 +3287,17 @@ static long btrfs_ioctl_cbs_ctl(struct btrfs_root *root, void __user *args)
 	struct btrfs_cbs_info *cbs_info;
 	int ret;
 
-    printk(KERN_INFO " ##### In %s ##### \n", __func__);
 	if (!capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
 	dargs = memdup_user(args, sizeof(*dargs));
 	if (IS_ERR(dargs)) {
 		ret = PTR_ERR(dargs);
-		    printk(KERN_INFO " ##### In %s : memdup user ret = %d ##### \n", __func__, ret);
 		return ret;
 	}
 
 	if (dargs->cmd >= BTRFS_CBS_CTL_LAST) {
 		ret = -EINVAL;
-	    printk(KERN_INFO " ##### In %s : memdup user ret = %d ##### \n", __func__, ret);
 		goto out;
 	}
 	switch (dargs->cmd) {
