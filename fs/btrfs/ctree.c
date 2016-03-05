@@ -2921,7 +2921,6 @@ again:
 			}
 
 			btrfs_set_path_blocking(p);
-			//printk(KERN_INFO "##### In btrfs_search_slot : Quad here. #####\n");
 
 			err = btrfs_cow_block(trans, root, b,
 					      p->nodes[level + 1],
@@ -2955,10 +2954,10 @@ cow_done:
 			}
 		}
 
-	  /*if(fs_info->cbs_info && key->type == BTRFS_DIR_ITEM_KEY)
-			ret = key_search_cbs(b, key, level, &prev_cmp, &slot);
-		else*/
-			ret = key_search(b, key, level, &prev_cmp, &slot);
+	 //  	if(fs_info->cbs_info && key->type == BTRFS_DIR_ITEM_KEY)
+		// 	ret = key_search_cbs(b, key, level, &prev_cmp, &slot);
+		// else
+		ret = key_search(b, key, level, &prev_cmp, &slot);
 
 		if (level != 0) {
 			int dec = 0;

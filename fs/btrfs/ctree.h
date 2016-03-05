@@ -1033,6 +1033,7 @@ struct btrfs_cbs_hash_item {
 	/* Spare space */
 	u8 __unused[16];
 
+	__le16 name_len;
 	/* Hash follows */
 } __attribute__ ((__packed__));
 
@@ -3350,6 +3351,7 @@ BTRFS_SETGET_FUNCS(dedup_hash_len, struct btrfs_dedup_hash_item, len, 64);
 /* btrfs_cbs_hash_item */
 BTRFS_SETGET_FUNCS(cbs_hash_len, struct btrfs_cbs_hash_item, len, 64);
 BTRFS_SETGET_FUNCS(cbs_inode_no, struct btrfs_cbs_hash_item, inode_no, 64);
+BTRFS_SETGET_FUNCS(cbs_name_len, struct btrfs_cbs_hash_item, name_len, 16);
 
 /* struct btrfs_file_extent_item */
 BTRFS_SETGET_FUNCS(file_extent_type, struct btrfs_file_extent_item, type, 8);
