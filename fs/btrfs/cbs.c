@@ -655,7 +655,7 @@ static u8 convert_hex_binary (char a)
  * Converts the 64 byte name recieved from userspace to 32 byte hash.
  * Later, calls ondisk_search_hash to fetch inode_no from hash vs inode cbs tree.
  */
-
+/*
 unsigned long prepare_hash(const char* name, u8 hash[32])
 {
     int i = 0, j = 0;
@@ -687,7 +687,7 @@ unsigned long prepare_hash(const char* name, u8 hash[32])
     }
 
 	return 0;
-}
+}*/
 
 void btrfs_cbs_set_name(char *name, int len)
 {

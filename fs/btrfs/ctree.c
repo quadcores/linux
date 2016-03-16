@@ -2954,9 +2954,9 @@ cow_done:
 			}
 		}
 
-	 //  	if(fs_info->cbs_info && key->type == BTRFS_DIR_ITEM_KEY)
-		// 	ret = key_search_cbs(b, key, level, &prev_cmp, &slot);
-		// else
+	 	//if(fs_info->cbs_info && key->type == BTRFS_DIR_ITEM_KEY)
+		//	ret = key_search_cbs(b, key, level, &prev_cmp, &slot);
+		//else
 		ret = key_search(b, key, level, &prev_cmp, &slot);
 
 		if (level != 0) {

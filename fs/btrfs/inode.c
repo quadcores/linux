@@ -4729,9 +4729,11 @@ static int __btrfs_unlink(struct inode *dir, struct dentry *dentry, struct inode
 
 	if(!cbs_inode)
 	{
-		if(dentry->d_name.len == 64)
+		if(dentry->d_name.len > 31)
 		{
-			prepare_hash(dentry->d_name.name, cbs_hash->hash);
+			//prepare_hash(dentry->d_name.name, cbs_hash->hash);
+
+			memcpy(cbs_hash->hash, dentry->d_name.name, 32);
 			inode_no = btrfs_cbs_search(dir, cbs_hash);
 	
 			printk(KERN_INFO "|\n| STEPS IN DELETING FILE THE CBS WAY :\n|");
@@ -6017,14 +6019,17 @@ static int btrfs_inode_by_name(struct inode *dir, struct dentry *dentry,
 	if (!path)
 		return -ENOMEM;
 
-	if(root->fs_info->cbs_info && namelen == 64){
-		printk(KERN_INFO "_________________________________________________________________________________________________________________________\n|");
+	if(root->fs_info->cbs_info && namelen > 31){
+		/*printk(KERN_INFO "_________________________________________________________________________________________________________________________\n|");
 		printk(KERN_INFO "| Content based storage mode is ON. \n");
 		printk(KERN_INFO "|________________________________________________________________________________________________________________________\n");
 		printk(KERN_INFO "|\n| READ STEPS IN CBS (CONTENT BASED LOOKUP) :\n|");
-		printk(KERN_INFO "| Searching inode from the given hash \n");
+		printk(KERN_INFO "| Searching inode from the given hash. \n");
+		printk(KERN_INFO "| Namelen = %d, Name = %s \n", namelen, name);*/
 
-		ret = prepare_hash(name, hash->hash);
+		//ret = prepare_hash(name, hash->hash);
+
+		memcpy(hash->hash, name, 32);
 		inode_no = btrfs_cbs_search(dir, hash);
 
 		if(inode_no>2)
@@ -6033,18 +6038,21 @@ static int btrfs_inode_by_name(struct inode *dir, struct dentry *dentry,
 			location->type = BTRFS_INODE_ITEM_KEY;
 			location->offset = 0;
 
-			printk(KERN_INFO "| inode_no %lu is associated with given hash. \n| BTRFS_INODE_ITEM_KEY gives O(1) performance instead of O(n)!!\n", inode_no);
+			/*printk(KERN_INFO "| inode_no %lu is associated with given hash. \n| BTRFS_INODE_ITEM_KEY gives O(1) performance instead of O(n)!!\n", inode_no);
 			printk(KERN_INFO "|________________________________________________________________________________________________________________________\n");
-
+*/
 			goto out;
 		}
 		else
-			printk(KERN_INFO "| No inode associated with given hash. 								|\n");			
+			//printk(KERN_INFO "| No inode associated with given hash. 								|\n");			
 			goto out_err;
 	}
 	else
+	{
+		//printk(KERN_INFO "| Failed to get into IF. Namelen = %d, Name = %s 								|\n", namelen, name);
 		di = btrfs_lookup_dir_item(NULL, root, path, btrfs_ino(dir), name,
 					    namelen, 0);
+	}
 
 	if (IS_ERR(di))
 		ret = PTR_ERR(di);
